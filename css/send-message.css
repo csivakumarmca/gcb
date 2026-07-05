@@ -1,0 +1,182 @@
+body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 12px;
+            background: #f7f7f7;
+            color: #222;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            max-width: 540px;
+            margin: 0 auto;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #c00000;
+            margin-bottom: 8px;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .pill-on {
+            background: #e7f7e7;
+            color: #146c2e;
+        }
+
+        .pill-off {
+            background: #fde7e7;
+            color: #9b0000;
+        }
+
+        .pill-direct {
+            background: #e8f1ff;
+            color: #0b4b88;
+            margin-left: 4px;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .secondary {
+            background: #555555;
+        }
+
+        .download {
+            background: #0a8f43;
+        }
+
+        .debug {
+            background: #1f5fbf;
+        }
+
+        .debug-active {
+            background: #083b8a;
+        }
+
+        .param-btn {
+            background: #6d3fa0;
+        }
+
+        .download-icon {
+            background: #0a8f43;
+            width: 44px;
+            min-width: 44px;
+            padding: 10px 0;
+            font-size: 18px;
+            display: none;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .row button.main {
+            flex: 1;
+        }
+
+        .status {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            background: #eeeeee;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 420px;
+            overflow-y: auto;
+        }
+
+        .success {
+            background: #e7f7e7;
+            color: #146c2e;
+        }
+
+        .error {
+            background: #fde7e7;
+            color: #9b0000;
+        }
+
+        .info {
+            background: #e8f1ff;
+            color: #0b4b88;
+        }
+
+        .warning {
+            background: #fff4d8;
+            color: #8a5200;
+        }
+
+
+        .diagnostic {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #f7fbff;
+            border-left: 4px solid #1f5fbf;
+            color: #163d66;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 260px;
+            overflow-y: auto;
+        }
+
+        .danger-btn {
+            background: #9b0000;
+        }
+
+        .check-btn {
+            background: #1f5fbf;
+        }
+
+        .build-info {
+            font-size: 11px;
+            color: #666666;
+            margin: 4px 0 10px 0;
+            line-height: 1.35;
+        }
+
+        .small {
+            font-size: 11px;
+            color: #666;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        .param-panel {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            background: #f4ecff;
+            color: #3d1d64;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 320px;
+            overflow-y: auto;
+            border-left: 4px solid #6d3fa0;
+        }

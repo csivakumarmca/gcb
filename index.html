@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GCB</title>
+  <style>
+    body { margin: 0; padding: 12px; font-family: Arial, Helvetica, sans-serif; background: #f4f6f8; color: #001b3d; font-size: 12px; }
+    .gcb-card { max-width: 760px; margin: 24px auto; background: #fff; border: 1px solid #cfd9e3; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .gcb-title { font-size: 17px; font-weight: 700; color: #004982; margin-bottom: 6px; }
+    .gcb-subtitle { color: #5b6773; margin-bottom: 14px; line-height: 1.4; }
+    .gcb-status { white-space: pre-wrap; line-height: 1.45; padding: 10px; border-radius: 6px; background: #e8f1ff; color: #0b4b88; word-break: break-word; }
+    .gcb-success { background: #e7f7e7; color: #146c2e; }
+    .gcb-warning { background: #fff4d8; color: #8a5200; }
+    .gcb-error { background: #fde7e7; color: #9b0000; }
+    .gcb-grid { display: grid; grid-template-columns: 170px 1fr; gap: 6px 10px; margin-top: 12px; }
+    .gcb-label { color: #53616f; font-weight: 700; }
+    .gcb-value { color: #001b3d; word-break: break-word; }
+    .gcb-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e3e8ef; }
+    .gcb-list { margin: 8px 0 0 18px; padding: 0; line-height: 1.55; }
+    code { background: #f3f6f9; border: 1px solid #e0e6ee; border-radius: 4px; padding: 1px 4px; }
+  </style>
+</head>
+<body>
+  <div class="gcb-card">
+    <div class="gcb-title">Genesys Context Bridge</div>
+    <div class="gcb-subtitle">Safe landing / router / OAuth health-check page. Business actions run only when a valid <code>module</code> is provided.</div>
+    <div id="gcbStatus" class="gcb-status">Initializing GCB...</div>
+    <div id="gcbDetails" class="gcb-grid" hidden></div>
+    <div id="gcbLanding" class="gcb-section" hidden>
+      <div class="gcb-label">Available modules</div>
+      <ul class="gcb-list">
+        <li><code>module=sendmsg</code> - Greeting / joined message processor</li>
+        <li><code>module=holdresume</code> - Hold / Resume control page</li>
+        <li><code>module=prospects</code> - Prospects wrap-up page</li>
+      </ul>
+      <div class="gcb-section">
+        <div class="gcb-label">Security note</div>
+        <div class="gcb-value">This page is intended for authorized Genesys Cloud usage only. The landing page does not send messages, does not execute Hold/Resume, and does not submit wrap-up data.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./js/gcb-common.js"></script>
+  <script src="./js/gcb-auth.js"></script>
+  <script src="./js/genesys-api.js"></script>
+  <script>
+    (function () {
+      "use strict";
+
+      const ROUTER_VERSION = "v1.2.0";
+      const C = window.RakCommon;
+      const Auth = window.RakAuth;
+      const Api = window.GenesysApi;
+      const MODULE_MAP = {
+        "send-message": "sendmsg.html",
+        "sendmessage": "sendmsg.html",
+        "sendmsg": "sendmsg.html",
+        "message": "sendmsg.html",
+        "greeting": "sendmsg.html",
+        "hold-resume": "holdresume.html",
+        "holdresume": "holdresume.html",
+        "hold": "holdresume.html",
+        "prospects": "prospects.html",
+        "prospect": "prospects.html"
+      };
+
+      function $(id) { return document.getElementById(id); }
+
+      function setStatus(message, type) {
+        const el = $("gcbStatus");
+        if (!el) return;
+        el.textContent = message || "";
+        el.className = "gcb-status" + (type ? " gcb-" + type : "");
+      }
+
+      function mask(value) {
+        const text = C.safeString(value);
+        if (!text) return "Not provided";
+        if (text.length <= 8) return "********";
+        return text.substring(0, 4) + "..." + text.substring(text.length - 4);
+      }
+
+      function addDetail(label, value) {
+        const details = $("gcbDetails");
+        if (!details) return;
+        details.hidden = false;
+        const labelEl = document.createElement("div");
+        labelEl.className = "gcb-label";
+        labelEl.textContent = label;
+        const valueEl = document.createElement("div");
+        valueEl.className = "gcb-value";
+        valueEl.textContent = value || "";
+        details.appendChild(labelEl);
+        details.appendChild(valueEl);
+      }
+
+      function showLanding(user) {
+        setStatus("GCB Ready. OAuth completed and Genesys access validated. No business module selected.", "success");
+        addDetail("Build", ROUTER_VERSION);
+        addDetail("Region", Auth.getRegion());
+        addDetail("Client ID", mask(Auth.getClientId()));
+        addDetail("Authenticated", "Yes");
+        addDetail("Genesys User", C.safeString(user && (user.name || user.email || user.id)) || "Validated");
+        addDetail("Selected Module", "None");
+        const landing = $("gcbLanding");
+        if (landing) landing.hidden = false;
+      }
+
+      function getModuleName() {
+        return C.safeString(C.getParam("module")).toLowerCase();
+      }
+
+      async function loadModule(moduleName) {
+        const moduleFile = MODULE_MAP[moduleName];
+        if (!moduleFile) {
+          setStatus("Invalid GCB module: " + moduleName + "\n\nAllowed modules: sendmsg, holdresume, prospects", "error");
+          addDetail("Build", ROUTER_VERSION);
+          addDetail("Selected Module", moduleName || "None");
+          return;
+        }
+
+        setStatus("OAuth validated. Loading module: " + moduleName + "\nRouter: " + ROUTER_VERSION);
+        const response = await fetch(moduleFile, { cache: "no-store" });
+        if (!response.ok) throw new Error("Unable to load " + moduleFile + ". HTTP " + response.status);
+        const html = await response.text();
+        document.open();
+        document.write(html);
+        document.close();
+      }
+
+      async function start() {
+        setStatus("Checking OAuth / MFA status...");
+
+        if (await Auth.handleOAuthRedirectIfPresent()) return;
+
+        const token = await Auth.ensureToken();
+        if (!token) return;
+
+        let user = null;
+        try {
+          user = await Api.getCurrentUser(token);
+        } catch (error) {
+          if (Auth.isAuthError(error)) {
+            Auth.clearToken();
+            await Auth.startPKCELogin({ restoreUrl: window.location.href });
+            return;
+          }
+          throw error;
+        }
+
+        const moduleName = getModuleName();
+        if (!moduleName) {
+          showLanding(user);
+          return;
+        }
+
+        await loadModule(moduleName);
+      }
+
+      start().catch(function (error) {
+        setStatus("GCB initialization failed: " + (error && error.message ? error.message : String(error)), "error");
+      });
+    })();
+  </script>
+</body>
+</html>

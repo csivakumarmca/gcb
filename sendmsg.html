@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GCB Send Message v5.1.0</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f7f7f7;
+      color: #222;
+      font-size: 12px;
+    }
+    .card {
+      max-width: 540px;
+      margin: 0 auto;
+      padding: 14px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .title {
+      margin-bottom: 8px;
+      color: #c00000;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .build-info {
+      margin: 4px 0 10px 0;
+      color: #666;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .pill {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .pill-on { background: #e7f7e7; color: #146c2e; }
+    .pill-off { background: #fde7e7; color: #9b0000; }
+    .pill-warn { background: #fff4d8; color: #8a5200; }
+    .pill-direct { margin-left: 4px; background: #e8f1ff; color: #0b4b88; }
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      background: #e8f1ff;
+      color: #0b4b88;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 420px;
+      overflow-y: auto;
+      line-height: 1.4;
+    }
+    .status.success { background: #e7f7e7; color: #146c2e; }
+    .status.error { background: #fde7e7; color: #9b0000; }
+    .status.warning { background: #fff4d8; color: #8a5200; }
+    .debug-panel {
+      margin-top: 10px;
+      padding: 10px;
+      border-left: 4px solid #1f5fbf;
+      border-radius: 6px;
+      background: #f7fbff;
+      color: #163d66;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 11px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 260px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="title">Genesys Context Bridge</div>
+    <div>
+      <span id="processorPill" class="pill pill-off">Processor: Starting...</span>
+      <span class="pill pill-direct">Mode: Greeting Only</span>
+    </div>
+    <div class="build-info">Build: v5.1.0 | Shared OAuth | Greeting duplicate guard by customer + agent session</div>
+    <div id="status" class="status">Initializing Send Message...</div>
+    <div id="debugPanel" class="debug-panel" hidden></div>
+  </div>
+
+  <script src="./js/gcb-common.js"></script>
+  <script src="./js/gcb-auth.js"></script>
+  <script src="./js/genesys-api.js"></script>
+  <script src="./js/send-message.js"></script>
+</body>
+</html>
