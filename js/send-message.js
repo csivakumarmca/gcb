@@ -1,4 +1,4 @@
-/* GCB Send Message - Greeting Only v5.1.0 */
+/* GCB Send Message - Mandatory Joined + Optional Greeting v5.2.0 */
 (function (global) {
   "use strict";
 
@@ -6,7 +6,7 @@
   const Auth = global.RakAuth;
   const Api = global.GenesysApi;
 
-  const VERSION = "v5.1.0";
+  const VERSION = "v5.2.0";
   const LOCAL_REQUEST_DONE_PREFIX = "Bank_GCB_GREETING_DONE_";
   const LOCAL_REQUEST_LOCK_PREFIX = "Bank_GCB_GREETING_LOCK_";
   const REQUEST_LOCK_TTL_MS = 15000;
@@ -36,6 +36,10 @@
 
   const DEFAULT_SUPERVISOR_JOINED_TEXT_EN = "Supervisor has joined the chat";
   const DEFAULT_SUPERVISOR_JOINED_TEXT_AR = "انضم المشرف إلى المحادثة";
+
+  // Joined message is mandatory for business logic.
+  // Greeting message is optional and controlled by greetingEnabled/sendGreeting URL parameter.
+  const DEFAULT_GREETING_ENABLED = true;
 
   const params = C.getParams();
   const request = buildRequest();
@@ -75,6 +79,16 @@
     el.textContent = debugLines.join("\n");
   }
 
+  function hasParam(name) {
+    return new URLSearchParams(global.location.search).has(name);
+  }
+
+  function getOptionalBoolParam(primaryName, secondaryName, defaultValue) {
+    if (hasParam(primaryName)) return C.getBoolParam(primaryName, defaultValue);
+    if (secondaryName && hasParam(secondaryName)) return C.getBoolParam(secondaryName, defaultValue);
+    return defaultValue;
+  }
+
   function buildRequest() {
     const requestId = C.getParam("requestId");
     const urlUuids = C.extractUuids(requestId);
@@ -112,6 +126,7 @@
       language,
       joinedMessageText: C.applyMessageTemplate(C.getParam("joinedMessageText"), replacements),
       messageText: C.applyMessageTemplate(C.getParam("messageText"), replacements),
+      greetingEnabled: getOptionalBoolParam("greetingEnabled", "sendGreeting", DEFAULT_GREETING_ENABLED),
       debug: C.getBoolParam("debug", false) || C.getBoolParam("showDebug", false),
       dryRun: C.getBoolParam("dryRun", false) || C.getBoolParam("diagnosticOnly", false)
     };
@@ -126,7 +141,7 @@
     if (!isGreetingRequest()) missing.push("action/requestType must be GREETING");
     if (!request.conversationId) missing.push("conversationId");
     if (!request.requestId) missing.push("requestId");
-    if (!request.joinedMessageText && !request.messageText) missing.push("joinedMessageText or messageText");
+    if (!request.joinedMessageText) missing.push("joinedMessageText is mandatory");
     if (!Auth.getClientId()) missing.push("clientId");
     if (!Auth.getRegion()) missing.push("region");
     return missing;
@@ -291,10 +306,10 @@
     return (p && p.attributes) || {};
   }
 
-  function buildGreetingKey(context) {
+  function buildSessionMessageKey(context) {
     return [
       context.conversationId,
-      "GREETING",
+      "JOINED",
       context.customerCommunicationId || "NO_CUSTOMER_COMM",
       context.agentParticipantId || "NO_AGENT_PARTICIPANT",
       context.agentCommunicationId || "NO_AGENT_COMM"
@@ -412,19 +427,18 @@
   }
 
   async function sendGreetingSequence(token, context, joinedText, greetingText) {
-    let sent = 0;
-    if (joinedText) {
-      await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, joinedText);
-      sent += 1;
-      addDebug("SEND_JOINED_OK", "Joined message sent.");
-      if (greetingText) await C.sleep(JOINED_TO_GREETING_DELAY_MS);
-    }
+    if (!joinedText) throw new Error("Joined message text is mandatory but empty.");
+
+    await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, joinedText);
+    addDebug("SEND_JOINED_OK", "Mandatory joined message sent.");
+
     if (greetingText) {
+      await C.sleep(JOINED_TO_GREETING_DELAY_MS);
       await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, greetingText);
-      sent += 1;
-      addDebug("SEND_GREETING_OK", "Greeting message sent.");
+      addDebug("SEND_GREETING_OK", "Optional greeting message sent.");
+    } else {
+      addDebug("SEND_GREETING_SKIPPED", request.greetingEnabled ? "Greeting enabled but messageText is empty." : "greetingEnabled=false/sendGreeting=false.");
     }
-    if (!sent) throw new Error("No joined message or greeting message found to send.");
   }
 
   async function processGreeting() {
@@ -433,7 +447,7 @@
     setPill("Processor: Validating", "on");
 
     try {
-      addDebug("INIT", "Send Message Greeting Only " + VERSION);
+      addDebug("INIT", "Send Message Mandatory Joined + Optional Greeting " + VERSION);
 
       if (await Auth.handleOAuthRedirectIfPresent()) return;
 
@@ -461,49 +475,50 @@
       if (!context.agentParticipantId) throw new Error("agentParticipantId/participantId could not be resolved. Pass participantId from Agent Script.");
       if (!context.agentCommunicationId) throw new Error("agentCommunicationId could not be resolved. Pass agentCommunicationId from Agent Script.");
 
-      const greetingKey = buildGreetingKey(context);
-      const localKey = greetingKey;
-      addDebug("GREETING_KEY", greetingKey);
+      const messageKey = buildSessionMessageKey(context);
+      const localKey = messageKey;
+      addDebug("MESSAGE_KEY", messageKey);
 
       if (localDoneExists(localKey)) {
         setPill("Processor: Skipped", "warn");
-        setStatus("Greeting skipped. Already sent in this browser/session.\nKey: " + greetingKey, "warning");
-        await writeGreetingLog(token, context, "SKIPPED", "LOCAL_DONE", greetingKey);
+        setStatus("Joined/greeting skipped. Already sent in this browser/session.\nKey: " + messageKey, "warning");
+        await writeGreetingLog(token, context, "SKIPPED", "LOCAL_DONE", messageKey);
         return;
       }
 
       if (!acquireLocalLock(localKey)) {
         setPill("Processor: Skipped", "warn");
-        setStatus("Greeting skipped. Local duplicate lock is active.\nKey: " + greetingKey, "warning");
-        await writeGreetingLog(token, context, "SKIPPED", "LOCAL_LOCK", greetingKey);
+        setStatus("Joined/greeting skipped. Local duplicate lock is active.\nKey: " + messageKey, "warning");
+        await writeGreetingLog(token, context, "SKIPPED", "LOCAL_LOCK", messageKey);
         return;
       }
 
       await C.sleep(GREETING_START_DELAY_MS);
 
-      const reservation = await reserveGreeting(token, context, greetingKey);
+      const reservation = await reserveGreeting(token, context, messageKey);
       if (!reservation.allow) {
         markLocalDone(localKey);
         setPill("Processor: Skipped", "warn");
-        setStatus("Greeting skipped. Already reserved/sent for this customer session and agent session.\nReason: " + reservation.reason + "\nKey: " + greetingKey, "warning");
-        await writeGreetingLog(token, context, "SKIPPED", reservation.reason, greetingKey);
+        setStatus("Joined/greeting skipped. Already reserved/sent for this customer session and agent session.\nReason: " + reservation.reason + "\nKey: " + messageKey, "warning");
+        await writeGreetingLog(token, context, "SKIPPED", reservation.reason, messageKey);
         releaseLocalLock(localKey);
         return;
       }
 
       const userContext = await getCurrentUserGreetingContext(token);
       const joinedText = buildJoinedMessage(request.joinedMessageText, userContext);
-      const greetingText = buildGreetingText(userContext.agentDisplayName);
+      const greetingText = request.greetingEnabled ? buildGreetingText(userContext.agentDisplayName) : "";
 
       if (request.dryRun) {
         setPill("Processor: Dry Run", "warn");
         setStatus(
           "DRY RUN - No message sent.\n" +
-          "Key: " + greetingKey + "\n" +
+          "Key: " + messageKey + "\n" +
           "Customer Communication: " + context.customerCommunicationId + "\n" +
           "Agent Participant: " + context.agentParticipantId + "\n" +
           "Agent Communication: " + context.agentCommunicationId + "\n" +
           "Joined Message: " + (joinedText || "[empty]") + "\n" +
+          "Greeting Enabled: " + (request.greetingEnabled ? "true" : "false") + "\n" +
           "Greeting Message: " + (greetingText || "[empty]"),
           "success"
         );
@@ -512,17 +527,19 @@
       }
 
       setPill("Processor: Sending", "on");
-      setStatus("Sending joined/greeting message...", "info");
+      setStatus("Sending mandatory joined message" + (greetingText ? " and optional greeting message..." : "..."), "info");
       await sendGreetingSequence(token, context, joinedText, greetingText);
-      await markGreetingSent(token, context, greetingKey, reservation.existingKeys);
-      await writeGreetingLog(token, context, "SUCCESS", "SENT", greetingKey);
+      await markGreetingSent(token, context, messageKey, reservation.existingKeys);
+      await writeGreetingLog(token, context, "SUCCESS", request.greetingEnabled ? "JOINED_GREETING_SENT" : "JOINED_SENT", messageKey);
       markLocalDone(localKey);
       releaseLocalLock(localKey);
 
       setPill("Processor: Done", "on");
       setStatus(
-        "Greeting sent successfully.\n" +
-        "Key: " + greetingKey + "\n" +
+        "Message sent successfully.\n" +
+        "Joined Message: SENT\n" +
+        "Greeting Message: " + (greetingText ? "SENT" : "SKIPPED") + "\n" +
+        "Key: " + messageKey + "\n" +
         "Conversation: " + context.conversationId + "\n" +
         "Customer Communication: " + context.customerCommunicationId + "\n" +
         "Agent Participant: " + context.agentParticipantId + "\n" +
