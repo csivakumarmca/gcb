@@ -1,0 +1,16 @@
+{
+  "projectShortName": "RAKBANK GCB",
+  "projectFullName": "RAKBANK Genesys Context Bridge",
+  "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
+  "pages": {
+    "sendMessage": "send-message.html",
+    "holdResume": "hold-resume.html",
+    "prospects": "prospects.html"
+  },
+  "notes": [
+    "send-message.html handles Greeting, Agent Joined and Supervisor Joined only.",
+    "Hold timer broadcast removed from send-message.js.",
+    "Hold/Resume timer and hold summary remain in hold-resume.html.",
+    "Prospects functionality remains in prospects.html."
+  ]
+}
