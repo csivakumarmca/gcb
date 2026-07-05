@@ -18,6 +18,19 @@
     .gcb-value { color: #001b3d; word-break: break-word; }
     .gcb-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e3e8ef; }
     .gcb-list { margin: 8px 0 0 18px; padding: 0; line-height: 1.55; }
+
+    .gcb-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .gcb-btn { border: 1px solid #b8c5d6; background: #fff; color: #003b70; border-radius: 5px; padding: 5px 9px; font-size: 11px; cursor: pointer; }
+    .gcb-btn:hover { background: #eef5ff; }
+    .gcb-debug-wrap { margin-top: 12px; }
+    .gcb-debug-log { background: #071727; color: #dbeafe; border-radius: 6px; padding: 10px; max-height: 290px; overflow: auto; font-family: Consolas, "Courier New", monospace; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .gcb-param-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+    .gcb-param-table td { border-bottom: 1px solid #e6edf5; padding: 4px 5px; vertical-align: top; word-break: break-word; }
+    .gcb-param-table td:first-child { font-weight: 700; color: #53616f; width: 190px; }
+    .gcb-badge { display: inline-block; border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
+    .gcb-badge-ok { background: #e7f7e7; color: #146c2e; }
+    .gcb-badge-bad { background: #fde7e7; color: #9b0000; }
+    .gcb-small-note { color: #5b6773; font-size: 11px; line-height: 1.45; margin-top: 6px; }
     code { background: #f3f6f9; border: 1px solid #e0e6ee; border-radius: 4px; padding: 1px 4px; }
   </style>
 </head>
@@ -38,9 +51,23 @@
         <div class="gcb-label">Security note</div>
         <div class="gcb-value">This page is intended for authorized Genesys Cloud usage only. The landing page does not send messages, does not execute Hold/Resume, and does not submit wrap-up data.</div>
       </div>
+      <div class="gcb-section gcb-debug-wrap">
+        <div class="gcb-label">Central Debug Console</div>
+        <div class="gcb-small-note">This panel reads GCB logs saved by index, sendmsg, holdresume, and prospects pages from this browser. It helps debug wrong script URLs, OAuth/MFA recovery, API failures, and module load issues.</div>
+        <div class="gcb-toolbar">
+          <button class="gcb-btn" id="refreshLogsBtn" type="button">Refresh logs</button>
+          <button class="gcb-btn" id="clearLogsBtn" type="button">Clear logs</button>
+          <button class="gcb-btn" id="copyLogsBtn" type="button">Copy logs</button>
+        </div>
+        <div id="urlHealth"></div>
+        <table class="gcb-param-table" id="paramTable"></table>
+        <div id="centralDebugLog" class="gcb-debug-log">No logs yet.</div>
+      </div>
+
     </div>
   </div>
 
+  <script src="./js/gcb-debug.js"></script>
   <script src="./js/gcb-common.js"></script>
   <script src="./js/gcb-auth.js"></script>
   <script src="./js/genesys-api.js"></script>
@@ -48,7 +75,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.2.0";
+      const ROUTER_VERSION = "v1.5.0";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -95,6 +122,78 @@
         details.appendChild(valueEl);
       }
 
+
+      function debugLog(level, step, message, data) {
+        try { if (window.GcbDebug) window.GcbDebug.log(level, step, message, data); } catch (_) {}
+      }
+
+      function getCentralEvents() {
+        try { return window.GcbDebug ? window.GcbDebug.getEvents() : []; } catch (_) { return []; }
+      }
+
+      function formatEvent(e) {
+        return [e.time, e.level, e.module, e.step, e.message, e.data || ""].filter(Boolean).join(" | ");
+      }
+
+      function validateCurrentUrl() {
+        const href = window.location.href;
+        const issues = [];
+        if (/%20\+%22|\+%20%22|\+\s*%22|%22\s*\+/i.test(href)) issues.push("URL contains script concatenation text like + quotes. Use the evaluated dynamic variable only.");
+        if (/https\/\//i.test(href)) issues.push("URL contains https// instead of https://.");
+        if (/=https?:\/\//i.test(href) && !href.startsWith("http")) issues.push("URL appears to start with a variable assignment instead of a real URL.");
+        if (href.includes("index.html%20")) issues.push("URL has encoded spaces after index.html.");
+        return issues;
+      }
+
+      function renderUrlHealth() {
+        const el = $("urlHealth");
+        if (!el) return;
+        const issues = validateCurrentUrl();
+        if (!issues.length) {
+          el.innerHTML = '<span class="gcb-badge gcb-badge-ok">Current URL format OK</span>';
+        } else {
+          el.innerHTML = '<span class="gcb-badge gcb-badge-bad">URL issue detected</span><div class="gcb-status gcb-error" style="margin-top:6px;">' + issues.map(C.escapeHtml).join("\n") + '</div>';
+        }
+      }
+
+      function renderParamTable() {
+        const table = $("paramTable");
+        if (!table) return;
+        const params = new URLSearchParams(window.location.search || "");
+        const keys = ["module", "conversationId", "gcConversationId", "communicationId", "agentCommunicationId", "customerCommunicationId", "participantId", "agentParticipantId", "clientId", "region", "usePopupAuth", "debug", "debugPanel", "greetingEnabled"];
+        table.innerHTML = "";
+        keys.forEach(function (key) {
+          const tr = document.createElement("tr");
+          const td1 = document.createElement("td");
+          const td2 = document.createElement("td");
+          td1.textContent = key;
+          td2.textContent = params.has(key) ? mask(params.get(key)) : "Not provided";
+          tr.appendChild(td1); tr.appendChild(td2); table.appendChild(tr);
+        });
+      }
+
+      function renderCentralLogs() {
+        const el = $("centralDebugLog");
+        if (!el) return;
+        const events = getCentralEvents().slice(-120).reverse();
+        el.textContent = events.length ? events.map(formatEvent).join("\n") : "No logs yet.";
+      }
+
+      function setupDebugButtons() {
+        const refresh = $("refreshLogsBtn");
+        const clear = $("clearLogsBtn");
+        const copy = $("copyLogsBtn");
+        if (refresh) refresh.onclick = renderCentralLogs;
+        if (clear) clear.onclick = function () { if (window.GcbDebug) window.GcbDebug.clear(); renderCentralLogs(); };
+        if (copy) copy.onclick = async function () {
+          const text = window.GcbDebug ? window.GcbDebug.exportText() : "";
+          try { await navigator.clipboard.writeText(text); setStatus("Debug logs copied to clipboard.", "success"); }
+          catch (_) { setStatus("Unable to copy automatically. Select and copy from the debug console.", "warning"); }
+        };
+        window.addEventListener("gcb-debug-event", renderCentralLogs);
+        setInterval(renderCentralLogs, 5000);
+      }
+
       function showLanding(user) {
         setStatus("GCB Ready. OAuth completed and Genesys access validated. No business module selected.", "success");
         addDetail("Build", ROUTER_VERSION);
@@ -105,6 +204,11 @@
         addDetail("Selected Module", "None");
         const landing = $("gcbLanding");
         if (landing) landing.hidden = false;
+        renderUrlHealth();
+        renderParamTable();
+        setupDebugButtons();
+        renderCentralLogs();
+        debugLog("INFO", "LANDING_READY", "Index health-check loaded. No business module selected.");
       }
 
       function getModuleName() {
@@ -124,6 +228,7 @@
         const response = await fetch(moduleFile, { cache: "no-store" });
         if (!response.ok) throw new Error("Unable to load " + moduleFile + ". HTTP " + response.status);
         const html = await response.text();
+        debugLog("INFO", "MODULE_LOAD_OK", moduleName + " loaded from " + moduleFile);
         document.open();
         document.write(html);
         document.close();
@@ -159,7 +264,14 @@
       }
 
       start().catch(function (error) {
+        debugLog("ERROR", "INDEX_INIT_FAILED", error && (error.stack || error.message) ? (error.stack || error.message) : String(error));
         setStatus("GCB initialization failed: " + (error && error.message ? error.message : String(error)), "error");
+        renderUrlHealth();
+        renderParamTable();
+        setupDebugButtons();
+        renderCentralLogs();
+        const landing = $("gcbLanding");
+        if (landing) landing.hidden = false;
       });
     })();
   </script>

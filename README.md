@@ -46,3 +46,8 @@ The router supports both old and new module names:
 - `module=sendmsg`, `module=send-message`, `module=sendmessage`, `module=message`, `module=greeting` → `sendmsg.html`
 - `module=holdresume`, `module=hold-resume`, `module=hold` → `holdresume.html`
 - `module=prospects`, `module=prospect` → `prospects.html`
+
+
+## v1.5 Central Debug Console
+
+`index.html` now works as the OAuth health-check and central debug console. It does not execute business actions when no `module` is passed. Logs from `sendmsg`, `holdresume`, and `prospects` are stored in browser localStorage and can be viewed/copied/cleared from the landing page. This helps troubleshoot wrong script URL concatenation, OAuth/MFA recovery, module loading, and API failures.
