@@ -1,8 +1,9 @@
-/* GCB Central Debug Bridge v1.0.0 */
+/* GCB Central Debug Bridge v1.1.0 */
 (function (global) {
   "use strict";
 
   const STORAGE_KEY = "GCB_CENTRAL_DEBUG_EVENTS";
+  const STATUS_KEY = "GCB_CENTRAL_STATUS";
   const MAX_EVENTS = 500;
   const SENSITIVE_PARAMS = new Set([
     "access_token", "id_token", "refresh_token", "token", "code", "state", "oauth_token", "authorization"
@@ -39,26 +40,80 @@
     if (!input) return "";
     try {
       const u = new URL(input, global.location.origin);
-      u.searchParams.forEach(function (value, key) {
-        u.searchParams.set(key, maskValue(key, value));
-      });
+      u.searchParams.forEach(function (value, key) { u.searchParams.set(key, maskValue(key, value)); });
       return u.toString();
     } catch (_) {
       return truncate(input.replace(/(access_token|id_token|refresh_token|token|code)=([^&\s]+)/ig, "$1=***masked***"), 1200);
     }
   }
-  function readEvents() {
+  function readJson(key, fallback) {
     try {
-      const raw = global.localStorage.getItem(STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (_) {
-      return [];
+      const raw = global.localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : fallback;
+      return parsed || fallback;
+    } catch (_) { return fallback; }
+  }
+  function writeJson(key, value) {
+    try { global.localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+  }
+  function readEvents() {
+    const parsed = readJson(STORAGE_KEY, []);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+  function writeEvents(events) { writeJson(STORAGE_KEY, events.slice(-MAX_EVENTS)); }
+  function readStatuses() { return readJson(STATUS_KEY, {}); }
+  function writeStatuses(statuses) { writeJson(STATUS_KEY, statuses || {}); }
+  function setStatus(key, state, reason) {
+    const k = safeString(key);
+    if (!k) return null;
+    const statuses = readStatuses();
+    statuses[k] = {
+      state: safeString(state || "pending"),
+      reason: truncate(reason || "", 500),
+      time: now()
+    };
+    writeStatuses(statuses);
+    try { global.dispatchEvent(new CustomEvent("gcb-status-event", { detail: { key: k, status: statuses[k] } })); } catch (_) {}
+    return statuses[k];
+  }
+  function clearStatuses() { writeStatuses({}); }
+
+  function inferStatus(event) {
+    const moduleName = safeString(event.module).toLowerCase();
+    const step = safeString(event.step).toUpperCase();
+    const msg = safeString(event.message);
+    const level = safeString(event.level).toUpperCase();
+
+    if (moduleName === "index.html" || moduleName === "index" || moduleName === "") {
+      if (step === "LANDING_READY" || (step === "FETCH_DONE" && /\/api\/v2\/users\/me/i.test(msg) && /HTTP 200/.test(msg))) {
+        setStatus("oauth", "success", "OAuth completed and Genesys access validated.");
+      }
+      if (step === "INDEX_INIT_FAILED" || (level === "ERROR" && /oauth|login|mfa|token|authorization/i.test(msg))) {
+        setStatus("oauth", "failed", msg || "OAuth validation failed.");
+      }
+    }
+
+    if (moduleName === "sendmsg" || moduleName === "sendmsg.html" || /sendmsg\.html/i.test(safeString(event.page))) {
+      if (step === "SEND_JOINED_OK" || step === "SEND_GREETING_OK") {
+        setStatus("sendGreeting", "success", step === "SEND_GREETING_OK" ? "Joined and greeting message sent." : "Mandatory joined message sent.");
+      }
+      if (/SKIPPED/.test(step)) setStatus("sendGreeting", "success", "Skipped duplicate / not required: " + msg);
+      if (step === "PROCESS_FAILED" || step === "VALIDATION_FAILED" || level === "ERROR") setStatus("sendGreeting", "failed", msg);
+    }
+
+    if (moduleName === "holdresume" || moduleName === "holdresume.html" || /holdresume\.html/i.test(safeString(event.page))) {
+      if (step === "SEND_OK") setStatus("holdResume", "success", msg || "Hold/Resume message sent.");
+      if (step === "SUMMARY_API_OK" || step === "SUMMARY_DIRECT_OK") setStatus("holdResume", "success", "Hold summary loaded.");
+      if (level === "ERROR" || step.includes("FAILED") || step.includes("ERROR")) setStatus("holdResume", "failed", msg);
+    }
+
+    if (moduleName === "prospects" || moduleName === "prospects.html" || /prospects\.html/i.test(safeString(event.page))) {
+      if (/Prospects values loaded/i.test(msg) || /VALUES_LOADED/i.test(msg)) setStatus("prospects", "success", "Prospects values loaded.");
+      if (/Wrap-up assigned and Prospects submitted successfully/i.test(msg) || /PARTICIPANT_DATA_SAVED|WRAPUP_ASSIGNED/i.test(msg)) setStatus("prospects", "success", "Wrap-up assigned and Prospects submitted successfully.");
+      if (level === "ERROR" || /Submit failed|LOAD_ERROR|ERROR::/i.test(msg) || step.includes("FAILED") || step.includes("ERROR")) setStatus("prospects", "failed", msg);
     }
   }
-  function writeEvents(events) {
-    try { global.localStorage.setItem(STORAGE_KEY, JSON.stringify(events.slice(-MAX_EVENTS))); } catch (_) {}
-  }
+
   function log(level, step, message, data) {
     const event = {
       time: now(),
@@ -76,10 +131,11 @@
     const events = readEvents();
     events.push(event);
     writeEvents(events);
+    inferStatus(event);
     try { global.dispatchEvent(new CustomEvent("gcb-debug-event", { detail: event })); } catch (_) {}
     return event;
   }
-  function clear() { writeEvents([]); }
+  function clear() { writeEvents([]); clearStatuses(); }
   function exportText() {
     return readEvents().map(function (e) {
       return [e.time, e.level, e.module, e.page, e.step, e.message, e.data || ""].join(" | ");
@@ -87,7 +143,7 @@
   }
 
   if (!global.GcbDebug) {
-    global.GcbDebug = { log, getEvents: readEvents, clear, exportText, maskUrl, storageKey: STORAGE_KEY };
+    global.GcbDebug = { log, getEvents: readEvents, clear, exportText, maskUrl, storageKey: STORAGE_KEY, setStatus, getStatuses: readStatuses, clearStatuses };
   }
 
   if (!global.__GCB_DEBUG_CONSOLE_WRAPPED__) {

@@ -352,7 +352,7 @@
 
       const params = new URLSearchParams(window.location.search);
       const APP_VERSION = getParam("version") || getParam("prospectsVersion") || DEFAULT_APP_VERSION;
-      const DEBUG_PANEL_ENABLED = getBooleanParam("debugPanel", false) || getBooleanParam("showDebug", false) || getBooleanParam("debug", false);
+      const DEBUG_PANEL_ENABLED = getBooleanParam("debugPanel", false) || getBooleanParam("pageDebug", false) || getBooleanParam("showPageDebug", false);
       const AUTO_REFRESH_TOKEN_ENABLED = getBooleanParam("autoRefreshToken", true) || getBooleanParam("autoLogin", false);
       const STORAGE_PROSPECTS_AUTO_REFRESH_BLOCKED = "gcb_prospects_auto_refresh_blocked";
       const STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED = "gcb_prospects_load_recovery_attempted";
@@ -644,9 +644,11 @@
           await updateSearchDebugAttribute(token);
           renderDebugParameters();
           setRuntimeStatus("Prospects values loaded.");
+          centralStatus("prospects", "success", "Prospects values loaded.");
         } catch (error) {
           const errorMessage = getErrorMessage(error);
           appendSearchLog("LOAD_ERROR::" + errorMessage);
+          centralStatus("prospects", "failed", errorMessage);
 
           if (shouldRecoverGenesysLogin(error) && AUTO_REFRESH_TOKEN_ENABLED && sessionStorage.getItem(STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED) !== "true") {
             sessionStorage.setItem(STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED, "true");
@@ -1327,12 +1329,14 @@
           saveDraft();
           renderDebugParameters();
           setRuntimeStatus("Wrap-up assigned and Prospects submitted successfully.");
+          centralStatus("prospects", "success", "Wrap-up assigned and Prospects submitted successfully.");
         } catch (error) {
           submitButton.disabled = false;
           appendSubmitLog(`ERROR::${getErrorMessage(error)}`);
           if (token) await updateAssignDebugAttribute(token);
           renderDebugParameters();
           setRuntimeStatus("Submit failed: " + getErrorMessage(error), true);
+          centralStatus("prospects", "failed", getErrorMessage(error));
         }
       }
 

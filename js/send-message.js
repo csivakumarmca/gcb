@@ -69,12 +69,16 @@
     debugLines.push(line);
     if (debugLines.length > 250) debugLines.shift();
     try { console.log(line); } catch (_) {}
-    if (request.debug) renderDebug();
+    if (request.pageDebug) renderDebug();
+  }
+
+  function centralStatus(key, state, reason) {
+    try { if (global.GcbDebug && global.GcbDebug.setStatus) global.GcbDebug.setStatus(key, state, reason); } catch (_) {}
   }
 
   function renderDebug() {
     const el = $("debugPanel");
-    if (!el || !request.debug) return;
+    if (!el || !request.pageDebug) return;
     el.hidden = false;
     el.textContent = debugLines.join("\n");
   }
@@ -128,6 +132,7 @@
       messageText: C.applyMessageTemplate(C.getParam("messageText"), replacements),
       greetingEnabled: getOptionalBoolParam("greetingEnabled", "sendGreeting", DEFAULT_GREETING_ENABLED),
       debug: C.getBoolParam("debug", false) || C.getBoolParam("showDebug", false),
+      pageDebug: C.getBoolParam("pageDebug", false) || C.getBoolParam("showPageDebug", false),
       dryRun: C.getBoolParam("dryRun", false) || C.getBoolParam("diagnosticOnly", false)
     };
   }
@@ -431,13 +436,16 @@
 
     await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, joinedText);
     addDebug("SEND_JOINED_OK", "Mandatory joined message sent.");
+    centralStatus("sendGreeting", "success", "Mandatory joined message sent.");
 
     if (greetingText) {
       await C.sleep(JOINED_TO_GREETING_DELAY_MS);
       await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, greetingText);
       addDebug("SEND_GREETING_OK", "Optional greeting message sent.");
+      centralStatus("sendGreeting", "success", "Joined and greeting message sent.");
     } else {
       addDebug("SEND_GREETING_SKIPPED", request.greetingEnabled ? "Greeting enabled but messageText is empty." : "greetingEnabled=false/sendGreeting=false.");
+      centralStatus("sendGreeting", "success", request.greetingEnabled ? "Joined sent. Greeting skipped because messageText is empty." : "Joined sent. Greeting disabled by URL.");
     }
   }
 
@@ -456,6 +464,7 @@
         setPill("Processor: Idle", "off");
         setStatus("Missing/invalid parameter(s): " + missing.join(", "), "error");
         addDebug("VALIDATION_FAILED", missing.join(", "));
+        centralStatus("sendGreeting", "failed", missing.join(", "));
         return;
       }
 
@@ -482,6 +491,7 @@
       if (localDoneExists(localKey)) {
         setPill("Processor: Skipped", "warn");
         setStatus("Joined/greeting skipped. Already sent in this browser/session.\nKey: " + messageKey, "warning");
+        centralStatus("sendGreeting", "success", "Skipped duplicate: already sent in this browser/session.");
         await writeGreetingLog(token, context, "SKIPPED", "LOCAL_DONE", messageKey);
         return;
       }
@@ -489,6 +499,7 @@
       if (!acquireLocalLock(localKey)) {
         setPill("Processor: Skipped", "warn");
         setStatus("Joined/greeting skipped. Local duplicate lock is active.\nKey: " + messageKey, "warning");
+        centralStatus("sendGreeting", "success", "Skipped duplicate: local lock active.");
         await writeGreetingLog(token, context, "SKIPPED", "LOCAL_LOCK", messageKey);
         return;
       }
@@ -500,6 +511,7 @@
         markLocalDone(localKey);
         setPill("Processor: Skipped", "warn");
         setStatus("Joined/greeting skipped. Already reserved/sent for this customer session and agent session.\nReason: " + reservation.reason + "\nKey: " + messageKey, "warning");
+        centralStatus("sendGreeting", "success", "Skipped duplicate: " + reservation.reason);
         await writeGreetingLog(token, context, "SKIPPED", reservation.reason, messageKey);
         releaseLocalLock(localKey);
         return;
@@ -550,6 +562,7 @@
     } catch (error) {
       const message = error && error.message ? error.message : String(error);
       addDebug("PROCESS_FAILED", message);
+      centralStatus("sendGreeting", "failed", message);
       setPill("Processor: Error", "off");
       setStatus("Send Message failed:\n" + message, "error");
     } finally {

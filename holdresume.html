@@ -735,7 +735,7 @@
       const line = "[" + new Date().toLocaleString() + "] " + step + " ==> " + safeString(message);
       debugLines.push(line);
       if (debugLines.length > 400) debugLines.shift();
-      if (CONFIG.debug) renderDebugPanel();
+      if (CONFIG.visibleDebug) renderDebugPanel();
       console.log(line);
     }
 
@@ -805,7 +805,7 @@
 
     function renderDebugPanel() {
       const panel = document.getElementById("debugPanel");
-      if (!panel || !CONFIG.debug) return;
+      if (!panel || !CONFIG.visibleDebug) return;
       panel.style.display = "block";
       panel.textContent = getDebugParametersText();
     }
@@ -1099,6 +1099,7 @@
       maxHoldTime: getNumberParam("maxHoldTime", getNumberParam("holdTimerSeconds", 0)),
       holdDetailsApiUrl: getParam("holdDetailsApiUrl", getParam("calculateHoldDetailsUrl", "")),
       debug: getBoolParam("debug", false),
+      visibleDebug: getBoolParam("pageDebug", false) || getBoolParam("showPageDebug", false),
       alertBlinkEnabled: getBoolParam("alertBlinkEnabled", true),
       alertSoundEnabled: getBoolParam("alertSoundEnabled", true),
       alertBlinkDurationMs: Math.max(3000, getNumberParam("alertBlinkDurationMs", 15000)),
@@ -2132,7 +2133,7 @@
           panel.textContent = getDebugParametersText();
         }
       });
-      if (CONFIG.debug) {
+      if (CONFIG.visibleDebug) {
         document.getElementById("debugBtn").style.display = "inline-block";
         renderDebugPanel();
       }

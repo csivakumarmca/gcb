@@ -5,66 +5,49 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GCB</title>
   <style>
-    body { margin: 0; padding: 12px; font-family: Arial, Helvetica, sans-serif; background: #f4f6f8; color: #001b3d; font-size: 12px; }
-    .gcb-card { max-width: 760px; margin: 24px auto; background: #fff; border: 1px solid #cfd9e3; border-radius: 10px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-    .gcb-title { font-size: 17px; font-weight: 700; color: #004982; margin-bottom: 6px; }
-    .gcb-subtitle { color: #5b6773; margin-bottom: 14px; line-height: 1.4; }
-    .gcb-status { white-space: pre-wrap; line-height: 1.45; padding: 10px; border-radius: 6px; background: #e8f1ff; color: #0b4b88; word-break: break-word; }
+    body { margin: 0; padding: 10px; font-family: Arial, Helvetica, sans-serif; background: #f4f6f8; color: #001b3d; font-size: 12px; }
+    .gcb-card { max-width: 760px; margin: 10px auto; background: #fff; border: 1px solid #cfd9e3; border-radius: 10px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .gcb-title { font-size: 16px; font-weight: 700; color: #004982; margin-bottom: 8px; }
+    .gcb-status { white-space: pre-wrap; line-height: 1.35; padding: 8px; border-radius: 6px; background: #e8f1ff; color: #0b4b88; word-break: break-word; margin-bottom: 10px; }
     .gcb-success { background: #e7f7e7; color: #146c2e; }
     .gcb-warning { background: #fff4d8; color: #8a5200; }
     .gcb-error { background: #fde7e7; color: #9b0000; }
-    .gcb-grid { display: grid; grid-template-columns: 170px 1fr; gap: 6px 10px; margin-top: 12px; }
-    .gcb-label { color: #53616f; font-weight: 700; }
-    .gcb-value { color: #001b3d; word-break: break-word; }
-    .gcb-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e3e8ef; }
-    .gcb-list { margin: 8px 0 0 18px; padding: 0; line-height: 1.55; }
-
-    .gcb-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .status-table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
+    .status-table td { padding: 7px 6px; border-bottom: 1px solid #e6edf5; vertical-align: top; }
+    .status-table td:first-child { width: 130px; font-weight: 700; color: #34495e; }
+    .status-ok { color: #146c2e; font-weight: 700; }
+    .status-fail { color: #9b0000; font-weight: 700; }
+    .status-pending { color: #7a5200; font-weight: 700; }
+    .gcb-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .gcb-btn { border: 1px solid #b8c5d6; background: #fff; color: #003b70; border-radius: 5px; padding: 5px 9px; font-size: 11px; cursor: pointer; }
     .gcb-btn:hover { background: #eef5ff; }
-    .gcb-debug-wrap { margin-top: 12px; }
-    .gcb-debug-log { background: #071727; color: #dbeafe; border-radius: 6px; padding: 10px; max-height: 290px; overflow: auto; font-family: Consolas, "Courier New", monospace; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-    .gcb-param-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
-    .gcb-param-table td { border-bottom: 1px solid #e6edf5; padding: 4px 5px; vertical-align: top; word-break: break-word; }
-    .gcb-param-table td:first-child { font-weight: 700; color: #53616f; width: 190px; }
-    .gcb-badge { display: inline-block; border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 700; }
-    .gcb-badge-ok { background: #e7f7e7; color: #146c2e; }
-    .gcb-badge-bad { background: #fde7e7; color: #9b0000; }
-    .gcb-small-note { color: #5b6773; font-size: 11px; line-height: 1.45; margin-top: 6px; }
-    code { background: #f3f6f9; border: 1px solid #e0e6ee; border-radius: 4px; padding: 1px 4px; }
+    .gcb-debug-log { display: none; background: #071727; color: #dbeafe; border-radius: 6px; padding: 10px; max-height: 240px; overflow: auto; font-family: Consolas, "Courier New", monospace; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; margin-top: 8px; }
+    .gcb-debug-log.show { display: block; }
+    .meta { display: grid; grid-template-columns: 90px 1fr; gap: 4px 8px; margin-top: 8px; color: #405263; font-size: 11px; }
+    .meta b { color: #001b3d; }
   </style>
 </head>
 <body>
   <div class="gcb-card">
-    <div class="gcb-title">Genesys Context Bridge</div>
-    <div class="gcb-subtitle">Safe landing / router / OAuth health-check page. Business actions run only when a valid <code>module</code> is provided.</div>
-    <div id="gcbStatus" class="gcb-status">Initializing GCB...</div>
-    <div id="gcbDetails" class="gcb-grid" hidden></div>
-    <div id="gcbLanding" class="gcb-section" hidden>
-      <div class="gcb-label">Available modules</div>
-      <ul class="gcb-list">
-        <li><code>module=sendmsg</code> - Greeting / joined message processor</li>
-        <li><code>module=holdresume</code> - Hold / Resume control page</li>
-        <li><code>module=prospects</code> - Prospects wrap-up page</li>
-      </ul>
-      <div class="gcb-section">
-        <div class="gcb-label">Security note</div>
-        <div class="gcb-value">This page is intended for authorized Genesys Cloud usage only. The landing page does not send messages, does not execute Hold/Resume, and does not submit wrap-up data.</div>
-      </div>
-      <div class="gcb-section gcb-debug-wrap">
-        <div class="gcb-label">Central Debug Console</div>
-        <div class="gcb-small-note">This panel reads GCB logs saved by index, sendmsg, holdresume, and prospects pages from this browser. It helps debug wrong script URLs, OAuth/MFA recovery, API failures, and module load issues.</div>
-        <div class="gcb-toolbar">
-          <button class="gcb-btn" id="refreshLogsBtn" type="button">Refresh logs</button>
-          <button class="gcb-btn" id="clearLogsBtn" type="button">Clear logs</button>
-          <button class="gcb-btn" id="copyLogsBtn" type="button">Copy logs</button>
-        </div>
-        <div id="urlHealth"></div>
-        <table class="gcb-param-table" id="paramTable"></table>
-        <div id="centralDebugLog" class="gcb-debug-log">No logs yet.</div>
-      </div>
+    <div class="gcb-title">Genesys Context Bridge (GCB)</div>
+    <div id="gcbStatus" class="gcb-status">Initializing...</div>
 
+    <table class="status-table" aria-label="GCB status summary">
+      <tr><td>OAuth</td><td id="lineOauth"><span class="status-pending">Pending</span></td></tr>
+      <tr><td>Send Greeting</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
+      <tr><td>Hold / Resume</td><td id="lineHoldResume"><span class="status-pending">Not run</span></td></tr>
+      <tr><td>Prospects</td><td id="lineProspects"><span class="status-pending">Not run</span></td></tr>
+    </table>
+
+    <div id="gcbMeta" class="meta"></div>
+
+    <div class="gcb-toolbar">
+      <button class="gcb-btn" id="refreshLogsBtn" type="button">Refresh</button>
+      <button class="gcb-btn" id="toggleLogsBtn" type="button">Show details</button>
+      <button class="gcb-btn" id="copyLogsBtn" type="button">Copy details</button>
+      <button class="gcb-btn" id="clearLogsBtn" type="button">Clear</button>
     </div>
+    <div id="centralDebugLog" class="gcb-debug-log">No logs yet.</div>
   </div>
 
   <script src="./js/gcb-debug.js"></script>
@@ -75,7 +58,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.5.0";
+      const ROUTER_VERSION = "v1.6.0";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -108,134 +91,124 @@
         return text.substring(0, 4) + "..." + text.substring(text.length - 4);
       }
 
-      function addDetail(label, value) {
-        const details = $("gcbDetails");
-        if (!details) return;
-        details.hidden = false;
-        const labelEl = document.createElement("div");
-        labelEl.className = "gcb-label";
-        labelEl.textContent = label;
-        const valueEl = document.createElement("div");
-        valueEl.className = "gcb-value";
-        valueEl.textContent = value || "";
-        details.appendChild(labelEl);
-        details.appendChild(valueEl);
-      }
-
-
       function debugLog(level, step, message, data) {
         try { if (window.GcbDebug) window.GcbDebug.log(level, step, message, data); } catch (_) {}
-      }
-
-      function getCentralEvents() {
-        try { return window.GcbDebug ? window.GcbDebug.getEvents() : []; } catch (_) { return []; }
-      }
-
-      function formatEvent(e) {
-        return [e.time, e.level, e.module, e.step, e.message, e.data || ""].filter(Boolean).join(" | ");
       }
 
       function validateCurrentUrl() {
         const href = window.location.href;
         const issues = [];
-        if (/%20\+%22|\+%20%22|\+\s*%22|%22\s*\+/i.test(href)) issues.push("URL contains script concatenation text like + quotes. Use the evaluated dynamic variable only.");
+        if (/%20\+%22|\+%20%22|\+\s*%22|%22\s*\+/i.test(href)) issues.push("URL contains script concatenation text like + quotes. Use the final evaluated URL variable only.");
         if (/https\/\//i.test(href)) issues.push("URL contains https// instead of https://.");
         if (/=https?:\/\//i.test(href) && !href.startsWith("http")) issues.push("URL appears to start with a variable assignment instead of a real URL.");
         if (href.includes("index.html%20")) issues.push("URL has encoded spaces after index.html.");
         return issues;
       }
 
-      function renderUrlHealth() {
-        const el = $("urlHealth");
+      function statusClass(state) {
+        const s = C.safeString(state).toLowerCase();
+        if (s === "success") return "status-ok";
+        if (s === "failed") return "status-fail";
+        return "status-pending";
+      }
+
+      function statusText(status, defaultText) {
+        if (!status || !status.state) return defaultText || "Not run";
+        const state = status.state === "success" ? "Success" : status.state === "failed" ? "Failed" : "Pending";
+        return state + (status.reason ? " - " + status.reason : "");
+      }
+
+      function setLine(id, status, defaultText) {
+        const el = $(id);
         if (!el) return;
+        const cls = statusClass(status && status.state);
+        el.innerHTML = '<span class="' + cls + '">' + C.escapeHtml(statusText(status, defaultText)) + '</span>';
+      }
+
+      function renderStatusLines() {
+        const statuses = window.GcbDebug ? window.GcbDebug.getStatuses() : {};
         const issues = validateCurrentUrl();
-        if (!issues.length) {
-          el.innerHTML = '<span class="gcb-badge gcb-badge-ok">Current URL format OK</span>';
-        } else {
-          el.innerHTML = '<span class="gcb-badge gcb-badge-bad">URL issue detected</span><div class="gcb-status gcb-error" style="margin-top:6px;">' + issues.map(C.escapeHtml).join("\n") + '</div>';
+        setLine("lineOauth", statuses.oauth, "Pending");
+        setLine("lineSendGreeting", statuses.sendGreeting, "Not run");
+        setLine("lineHoldResume", statuses.holdResume, "Not run");
+        setLine("lineProspects", statuses.prospects, "Not run");
+        if (issues.length) {
+          setStatus("URL issue detected: " + issues.join(" | "), "error");
         }
       }
 
-      function renderParamTable() {
-        const table = $("paramTable");
-        if (!table) return;
+      function renderMeta(user) {
+        const meta = $("gcbMeta");
+        if (!meta) return;
         const params = new URLSearchParams(window.location.search || "");
-        const keys = ["module", "conversationId", "gcConversationId", "communicationId", "agentCommunicationId", "customerCommunicationId", "participantId", "agentParticipantId", "clientId", "region", "usePopupAuth", "debug", "debugPanel", "greetingEnabled"];
-        table.innerHTML = "";
-        keys.forEach(function (key) {
-          const tr = document.createElement("tr");
-          const td1 = document.createElement("td");
-          const td2 = document.createElement("td");
-          td1.textContent = key;
-          td2.textContent = params.has(key) ? mask(params.get(key)) : "Not provided";
-          tr.appendChild(td1); tr.appendChild(td2); table.appendChild(tr);
+        meta.innerHTML = "";
+        const rows = [
+          ["Build", ROUTER_VERSION],
+          ["Region", Auth.getRegion()],
+          ["Client", mask(Auth.getClientId())],
+          ["Conv", mask(params.get("conversationId") || params.get("gcConversationId"))],
+          ["Module", params.get("module") || "None"]
+        ];
+        if (user) rows.push(["User", C.safeString(user.name || user.email || user.id) || "Validated"]);
+        rows.forEach(function (r) {
+          const k = document.createElement("b"); k.textContent = r[0];
+          const v = document.createElement("div"); v.textContent = r[1] || "Not provided";
+          meta.appendChild(k); meta.appendChild(v);
         });
+      }
+
+      function formatEvent(e) {
+        return [e.time, e.level, e.module, e.step, e.message, e.data || ""].filter(Boolean).join(" | ");
       }
 
       function renderCentralLogs() {
         const el = $("centralDebugLog");
         if (!el) return;
-        const events = getCentralEvents().slice(-120).reverse();
+        const events = window.GcbDebug ? window.GcbDebug.getEvents().slice(-120).reverse() : [];
         el.textContent = events.length ? events.map(formatEvent).join("\n") : "No logs yet.";
+        renderStatusLines();
       }
 
-      function setupDebugButtons() {
+      function setupButtons() {
         const refresh = $("refreshLogsBtn");
         const clear = $("clearLogsBtn");
         const copy = $("copyLogsBtn");
+        const toggle = $("toggleLogsBtn");
+        const logBox = $("centralDebugLog");
         if (refresh) refresh.onclick = renderCentralLogs;
         if (clear) clear.onclick = function () { if (window.GcbDebug) window.GcbDebug.clear(); renderCentralLogs(); };
         if (copy) copy.onclick = async function () {
           const text = window.GcbDebug ? window.GcbDebug.exportText() : "";
-          try { await navigator.clipboard.writeText(text); setStatus("Debug logs copied to clipboard.", "success"); }
-          catch (_) { setStatus("Unable to copy automatically. Select and copy from the debug console.", "warning"); }
+          try { await navigator.clipboard.writeText(text); setStatus("Debug details copied.", "success"); }
+          catch (_) { setStatus("Unable to copy automatically. Open details and copy manually.", "warning"); }
+        };
+        if (toggle && logBox) toggle.onclick = function () {
+          logBox.classList.toggle("show");
+          toggle.textContent = logBox.classList.contains("show") ? "Hide details" : "Show details";
         };
         window.addEventListener("gcb-debug-event", renderCentralLogs);
+        window.addEventListener("gcb-status-event", renderStatusLines);
         setInterval(renderCentralLogs, 5000);
       }
 
-      function showLanding(user) {
-        setStatus("GCB Ready. OAuth completed and Genesys access validated. No business module selected.", "success");
-        addDetail("Build", ROUTER_VERSION);
-        addDetail("Region", Auth.getRegion());
-        addDetail("Client ID", mask(Auth.getClientId()));
-        addDetail("Authenticated", "Yes");
-        addDetail("Genesys User", C.safeString(user && (user.name || user.email || user.id)) || "Validated");
-        addDetail("Selected Module", "None");
-        const landing = $("gcbLanding");
-        if (landing) landing.hidden = false;
-        renderUrlHealth();
-        renderParamTable();
-        setupDebugButtons();
-        renderCentralLogs();
-        debugLog("INFO", "LANDING_READY", "Index health-check loaded. No business module selected.");
-      }
-
-      function getModuleName() {
-        return C.safeString(C.getParam("module")).toLowerCase();
-      }
+      function getModuleName() { return C.safeString(C.getParam("module")).toLowerCase(); }
 
       async function loadModule(moduleName) {
         const moduleFile = MODULE_MAP[moduleName];
-        if (!moduleFile) {
-          setStatus("Invalid GCB module: " + moduleName + "\n\nAllowed modules: sendmsg, holdresume, prospects", "error");
-          addDetail("Build", ROUTER_VERSION);
-          addDetail("Selected Module", moduleName || "None");
-          return;
-        }
-
-        setStatus("OAuth validated. Loading module: " + moduleName + "\nRouter: " + ROUTER_VERSION);
+        if (!moduleFile) throw new Error("Invalid GCB module: " + moduleName);
+        setStatus("OAuth success. Loading " + moduleName + "...", "success");
         const response = await fetch(moduleFile, { cache: "no-store" });
         if (!response.ok) throw new Error("Unable to load " + moduleFile + ". HTTP " + response.status);
         const html = await response.text();
         debugLog("INFO", "MODULE_LOAD_OK", moduleName + " loaded from " + moduleFile);
-        document.open();
-        document.write(html);
-        document.close();
+        document.open(); document.write(html); document.close();
       }
 
       async function start() {
-        setStatus("Checking OAuth / MFA status...");
+        setupButtons();
+        renderMeta(null);
+        renderCentralLogs();
+        setStatus("Checking OAuth / MFA...", "warning");
 
         if (await Auth.handleOAuthRedirectIfPresent()) return;
 
@@ -245,7 +218,9 @@
         let user = null;
         try {
           user = await Api.getCurrentUser(token);
+          if (window.GcbDebug) window.GcbDebug.setStatus("oauth", "success", "OAuth completed and Genesys access validated.");
         } catch (error) {
+          if (window.GcbDebug) window.GcbDebug.setStatus("oauth", "failed", error && error.message ? error.message : String(error));
           if (Auth.isAuthError(error)) {
             Auth.clearToken();
             await Auth.startPKCELogin({ restoreUrl: window.location.href });
@@ -254,24 +229,22 @@
           throw error;
         }
 
+        renderMeta(user);
+        renderStatusLines();
         const moduleName = getModuleName();
         if (!moduleName) {
-          showLanding(user);
+          setStatus("GCB Ready. OAuth success. No business module selected.", "success");
+          debugLog("INFO", "LANDING_READY", "Index status page loaded. No business module selected.");
           return;
         }
-
         await loadModule(moduleName);
       }
 
       start().catch(function (error) {
-        debugLog("ERROR", "INDEX_INIT_FAILED", error && (error.stack || error.message) ? (error.stack || error.message) : String(error));
-        setStatus("GCB initialization failed: " + (error && error.message ? error.message : String(error)), "error");
-        renderUrlHealth();
-        renderParamTable();
-        setupDebugButtons();
-        renderCentralLogs();
-        const landing = $("gcbLanding");
-        if (landing) landing.hidden = false;
+        const msg = error && (error.stack || error.message) ? (error.stack || error.message) : String(error);
+        debugLog("ERROR", "INDEX_INIT_FAILED", msg);
+        setStatus("GCB failed: " + (error && error.message ? error.message : String(error)), "error");
+        renderStatusLines();
       });
     })();
   </script>

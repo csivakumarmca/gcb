@@ -1,53 +1,32 @@
-# Genesys Context Bridge (GCB)
+# Genesys Context Bridge (GCB) v1.6
 
-Updated shared-auth package with simplified module HTML file names.
+This package keeps business pages clean and moves the visible debug/status view to `index.html`.
 
-## Entry page
+## Visible debug/status
 
-`index.html` is the single entry/router page.
+`index.html` shows only four standard status lines:
 
-Behavior:
+1. OAuth - success/failed with reason
+2. Send Greeting - success/failed with reason
+3. Hold / Resume - success/failed with reason
+4. Prospects - success/failed with reason
 
-- Runs shared OAuth / MFA recovery check.
-- Validates Genesys access with a safe `/api/v2/users/me` call.
-- Does **not** execute any business action when no module is provided.
-- Does **not** default to any business module.
-- Shows a safe landing / health-check page when opened directly.
+Detailed logs are hidden by default and can be opened using **Show details**.
 
-## Modules
+## Pages
 
-Use the `module` query parameter:
+- `index.html` - landing, OAuth health-check, central status/debug
+- `sendmsg.html` - background processor for joined/greeting messages
+- `holdresume.html` - Hold/Resume page
+- `prospects.html` - Prospects wrap-up page
 
-- `index.html?module=sendmsg` → Greeting / joined message processor
-- `index.html?module=holdresume` → Hold / Resume page
-- `index.html?module=prospects` → Prospects wrap-up page
+## Debug behavior
 
-## Shared JavaScript
+Module pages silently write logs/status to browser localStorage using `js/gcb-debug.js`.
+Visible module debug panels are disabled by default. Use `pageDebug=true` only if a visible debug panel is needed on a module page.
 
-- `js/gcb-common.js` - common utilities
-- `js/gcb-auth.js` - shared OAuth / PKCE / MFA recovery logic
-- `js/genesys-api.js` - shared Genesys API helpers
-- `js/send-message.js` - Send Message module logic
+For the Interaction Widget landing page, use:
 
-## Send Message
-
-`sendmsg.html` is greeting-only and uses shared OAuth/API files.
-
-Duplicate greeting guard key:
-
-`conversationId-GREETING-customerCommunicationId-agentParticipantId-agentCommunicationId`
-
-Hold/Resume logic is not present in `sendmsg.html`.
-
-## Backward compatibility
-
-The router supports both old and new module names:
-
-- `module=sendmsg`, `module=send-message`, `module=sendmessage`, `module=message`, `module=greeting` → `sendmsg.html`
-- `module=holdresume`, `module=hold-resume`, `module=hold` → `holdresume.html`
-- `module=prospects`, `module=prospect` → `prospects.html`
-
-
-## v1.5 Central Debug Console
-
-`index.html` now works as the OAuth health-check and central debug console. It does not execute business actions when no `module` is passed. Logs from `sendmsg`, `holdresume`, and `prospects` are stored in browser localStorage and can be viewed/copied/cleared from the landing page. This helps troubleshoot wrong script URL concatenation, OAuth/MFA recovery, module loading, and API failures.
+```text
+https://<host>/gcb/index.html?langTag={{gcLangTag}}&gcTargetEnv={{gcTargetEnv}}&gcHostOrigin={{gcHostOrigin}}&conversationId={{gcConversationId}}&usePopupAuth={{gcUsePopupAuth}}&clientId=<clientId>&region=mypurecloud.ie
+```
