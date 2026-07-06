@@ -1,3 +1,15 @@
+# GCB v1.7.2.1 - SendMsg Retry Patch
+
+This package is based on the confirmed working v1.7.2 baseline.
+
+Change included:
+- Updated `js/send-message.js` only for Send Greeting retry.
+- Waits/retries while Genesys agent communication is becoming ready.
+- Uses Agent Script communication values and sends through agent communication.
+
+Keep old full `AFT_URL_GCB_CommonParams`.
+Use a fresh cache value such as `v=17221`.
+
 # Genesys Context Bridge (GCB) v1.7.2
 
 Update in v1.7.2:

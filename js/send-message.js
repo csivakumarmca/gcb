@@ -1,4 +1,4 @@
-/* GCB Send Message - Mandatory Joined + Optional Greeting v5.3.0 */
+/* GCB Send Message - Mandatory Joined + Optional Greeting v5.2.0 */
 (function (global) {
   "use strict";
 
@@ -6,11 +6,13 @@
   const Auth = global.RakAuth;
   const Api = global.GenesysApi;
 
-  const VERSION = "v5.3.0";
+  const VERSION = "v5.2.1-retry";
   const LOCAL_REQUEST_DONE_PREFIX = "Bank_GCB_GREETING_DONE_";
   const LOCAL_REQUEST_LOCK_PREFIX = "Bank_GCB_GREETING_LOCK_";
   const REQUEST_LOCK_TTL_MS = 15000;
-  const GREETING_START_DELAY_MS = 700;
+  const GREETING_START_DELAY_MS = 1200;
+  const CONTEXT_RETRY_COUNT = 5;
+  const CONTEXT_RETRY_DELAY_MS = 2000;
   const JOINED_TO_GREETING_DELAY_MS = 600;
   const RESERVATION_RECHECK_DELAY_MS = 250;
   const RESERVATION_STALE_MS = 30000;
@@ -414,27 +416,46 @@
     } catch (_) {}
   }
 
+  function isUsableContext(context) {
+    return !!(context && context.conversationId && context.agentCommunicationId && context.sendCommunicationId && context.agentParticipantId);
+  }
+
   async function resolveContext(token) {
-    const resolver = Api.resolveOwnedAgentCommunicationContext || Api.resolveCommunicationContext;
-    const resolved = await resolver(token, request.conversationId, {
-      customerCommunicationId: request.customerCommunicationId,
-      agentCommunicationId: request.agentCommunicationId,
-      communicationId: request.agentCommunicationId,
-      participantId: request.participantId,
-      agentParticipantId: request.participantId
-    });
+    let lastError = null;
+    for (let attempt = 1; attempt <= CONTEXT_RETRY_COUNT; attempt++) {
+      try {
+        const resolved = await Api.resolveCommunicationContext(token, request.conversationId, {
+          customerCommunicationId: request.customerCommunicationId,
+          agentCommunicationId: request.agentCommunicationId,
+          participantId: request.participantId,
+          agentParticipantId: request.participantId
+        });
 
-    addDebug("COMM_RESOLVED", "source=" + (resolved.source || "LEGACY") + " | agentComm=" + (resolved.agentCommunicationId || "") + " | agentParticipant=" + (resolved.agentParticipantId || ""));
+        const context = {
+          conversationId: request.conversationId,
+          customerCommunicationId: resolved.customerCommunicationId || request.customerCommunicationId,
+          agentCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId,
+          agentParticipantId: resolved.agentParticipantId || request.participantId,
+          // Outbound messages must be sent on the agent/non-external communication.
+          // customerCommunicationId is kept only for duplicate-key/session identification.
+          sendCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId
+        };
 
-    return {
-      conversationId: request.conversationId,
-      customerCommunicationId: resolved.customerCommunicationId,
-      agentCommunicationId: resolved.agentCommunicationId,
-      agentParticipantId: resolved.agentParticipantId || request.participantId,
-      // Outbound messages must be sent on the logged-in user's owned connected agent communication.
-      // customerCommunicationId is kept only for duplicate-key/session identification.
-      sendCommunicationId: resolved.agentCommunicationId
-    };
+        addDebug("COMM_RESOLVE_ATTEMPT", "attempt=" + attempt + " | sendComm=" + (context.sendCommunicationId || "") + " | agentParticipant=" + (context.agentParticipantId || ""));
+        if (isUsableContext(context)) return context;
+      } catch (error) {
+        lastError = error;
+        addDebug("COMM_RESOLVE_RETRY", "attempt=" + attempt + " failed: " + (error && error.message ? error.message : String(error)));
+      }
+
+      if (attempt < CONTEXT_RETRY_COUNT) {
+        setStatus("Waiting for agent communication to become ready... retry " + attempt + "/" + CONTEXT_RETRY_COUNT, "info");
+        await C.sleep(CONTEXT_RETRY_DELAY_MS);
+      }
+    }
+
+    if (lastError) throw lastError;
+    throw new Error("Agent communication could not be resolved after retry. Check Agent Script communicationId/agentCommunicationId values.");
   }
 
   async function sendGreetingSequence(token, context, joinedText, greetingText) {
