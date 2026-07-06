@@ -427,7 +427,9 @@
       customerCommunicationId: resolved.customerCommunicationId,
       agentCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId,
       agentParticipantId: resolved.agentParticipantId || request.participantId,
-      sendCommunicationId: resolved.customerCommunicationId
+      // Outbound messages must be sent on the agent/non-external communication.
+      // customerCommunicationId is kept only for duplicate-key/session identification.
+      sendCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId
     };
   }
 

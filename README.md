@@ -1,3 +1,12 @@
+# Genesys Context Bridge (GCB) v1.6.2
+
+Fix in v1.6.2:
+- Send Message now sends joined/greeting on the agent/non-external communication ID.
+- `customerCommunicationId` is used only for session duplicate key, not for sending outbound messages.
+- This fixes Genesys API error: `Bad request: messages may only be sent for non-external communications`.
+
+Upload the full package to GitHub Pages root, or replace at least `js/send-message.js`.
+
 # Genesys Context Bridge (GCB) v1.6.1
 
 This package keeps business pages clean and moves the visible debug/status view to `index.html`.
