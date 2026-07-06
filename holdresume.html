@@ -670,7 +670,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.0.12";
+    const HR_VERSION = "v1.7.0";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -688,6 +688,8 @@
     const STORAGE_SUMMARY_PREFIX = "gcb_hr_summary_";
     const STORAGE_ATTEMPT_PREFIX = "gcb_hr_attempt_";
     const STORAGE_AUTH_RECOVERY_PREFIX = "gcb_hr_auth_recovery_";
+    const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
+    const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
 
     let isProcessing = false;
     let isInitialSummaryLoading = true;
@@ -1155,6 +1157,101 @@
 
     function getAuthRecoveryStateKey() {
       return STORAGE_AUTH_RECOVERY_PREFIX + getContextKey();
+    }
+
+    function getCentralHoldKey() {
+      return sanitizeKey([
+        CONFIG.conversationId || "NO_CONV",
+        CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_AGENT_COMM",
+        CONFIG.customerCommunicationId || "NO_CUSTOMER_COMM"
+      ].join("|"));
+    }
+
+    function readCentralHoldRecords() {
+      try {
+        const raw = localStorage.getItem(GCB_ACTIVE_HOLDS_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writeCentralHoldRecords(records) {
+      try { localStorage.setItem(GCB_ACTIVE_HOLDS_KEY, JSON.stringify(records || {})); } catch (_) {}
+    }
+
+    function broadcastCentralHoldEvent(type, record) {
+      try {
+        if (typeof BroadcastChannel !== "undefined") {
+          const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
+          channel.postMessage({ type: type, record: record || null, time: new Date().toISOString() });
+          channel.close();
+        }
+      } catch (_) {}
+      try { window.dispatchEvent(new CustomEvent("gcb-hold-monitor-event", { detail: { type: type, record: record || null } })); } catch (_) {}
+    }
+
+    function saveCentralHoldRecord() {
+      if (!CONFIG.conversationId || !(CONFIG.agentCommunicationId || CONFIG.communicationId)) return;
+      const records = readCentralHoldRecords();
+      const key = getCentralHoldKey();
+      const nowMs = Date.now();
+      const record = {
+        key: key,
+        conversationId: CONFIG.conversationId,
+        communicationId: CONFIG.communicationId,
+        agentCommunicationId: CONFIG.agentCommunicationId || CONFIG.communicationId,
+        participantId: CONFIG.participantId,
+        agentParticipantId: CONFIG.agentParticipantId || CONFIG.participantId,
+        customerCommunicationId: CONFIG.customerCommunicationId,
+        holdMessageText: CONFIG.holdMessageText,
+        resumeMessageText: CONFIG.resumeMessageText,
+        maxHoldTime: CONFIG.maxHoldTime,
+        holdStartTimeMs: nowMs,
+        holdStartTimeUtc: new Date(nowMs).toISOString(),
+        status: "HOLD",
+        resumeSent: false,
+        source: "holdresume.html"
+      };
+      records[key] = record;
+      writeCentralHoldRecords(records);
+      broadcastCentralHoldEvent("HOLD_STARTED", record);
+      addDebug("CENTRAL_HOLD_RECORD_SAVED", "key=" + key + " | maxHoldTime=" + CONFIG.maxHoldTime);
+    }
+
+    function updateCentralHoldRecordStatus(status, reason) {
+      const records = readCentralHoldRecords();
+      const key = getCentralHoldKey();
+      const record = records[key];
+      if (!record) return;
+      record.status = status;
+      record.resumeSent = status === "RESUMED_AUTO" || status === "RESUMED_MANUAL";
+      record.resumeTimeUtc = new Date().toISOString();
+      record.reason = reason || "";
+      records[key] = record;
+      writeCentralHoldRecords(records);
+      broadcastCentralHoldEvent(status, record);
+      addDebug("CENTRAL_HOLD_RECORD_UPDATED", "key=" + key + " | status=" + status + " | reason=" + safeString(reason));
+    }
+
+    function readOwnCentralHoldRecord() {
+      return readCentralHoldRecords()[getCentralHoldKey()] || null;
+    }
+
+    function applyCentralAutoResumeIfPresent() {
+      const record = readOwnCentralHoldRecord();
+      if (!record || record.status !== "RESUMED_AUTO") return false;
+      if (!isOnHold) return true;
+      isOnHold = false;
+      persistButtonState();
+      stopMaxHoldTimer(true);
+      updateButtonState();
+      setStatus("Auto resume was already sent by central GCB monitor.", "success");
+      showPersistentAlert("Auto resume was sent by the central GCB monitor because maximum hold duration was reached.", "warning");
+      addDebug("CENTRAL_AUTO_RESUME_APPLIED", "key=" + record.key);
+      hideStatusSoon();
+      return true;
     }
 
     function clearOAuthToken() {
@@ -1926,6 +2023,7 @@
         }
         activeTimer = timer;
         isOnHold = true;
+        if (applyCentralAutoResumeIfPresent()) return;
         tickTimer();
         holdTimerInterval = setInterval(tickTimer, 1000);
       } catch (_) {}
@@ -2009,6 +2107,7 @@
 
       try {
         await sendMessageToConversation("RESUME", CONFIG.resumeMessageText);
+        updateCentralHoldRecordStatus("RESUMED_AUTO", "LOCAL_TIMER_MAX_HOLD_TIME");
         isOnHold = false;
         persistButtonState();
         stopMaxHoldTimer(true);
@@ -2093,11 +2192,13 @@
           isOnHold = true;
           persistButtonState();
           startMaxHoldTimer();
+          saveCentralHoldRecord();
           setStatus("Hold message sent. Timer started.", "success");
         } else {
           isOnHold = false;
           persistButtonState();
           stopMaxHoldTimer(true);
+          updateCentralHoldRecordStatus("RESUMED_MANUAL", "MANUAL_RESUME_CLICK");
           setStatus("Resume message sent. Timer stopped.", "success");
         }
 
@@ -2117,6 +2218,7 @@
       document.getElementById("holdResumeBtn").addEventListener("click", handleHoldResumeClick);
       document.getElementById("refreshBtn").addEventListener("click", async function () {
         try {
+          applyCentralAutoResumeIfPresent();
           setStatus("Refreshing hold summary...", "info");
           await refreshHoldSummary(true);
         } catch (err) {
@@ -2137,6 +2239,20 @@
         document.getElementById("debugBtn").style.display = "inline-block";
         renderDebugPanel();
       }
+
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) applyCentralAutoResumeIfPresent();
+      });
+      window.addEventListener("focus", applyCentralAutoResumeIfPresent);
+      window.addEventListener("storage", function (event) {
+        if (event && event.key === GCB_ACTIVE_HOLDS_KEY) applyCentralAutoResumeIfPresent();
+      });
+      try {
+        if (typeof BroadcastChannel !== "undefined") {
+          const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
+          channel.onmessage = function () { applyCentralAutoResumeIfPresent(); };
+        }
+      } catch (_) {}
 
       setText("maxHoldAttempts", CONFIG.maxHoldAttempts);
       setText("maxHoldAttemptsSub", CONFIG.maxHoldAttempts);

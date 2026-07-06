@@ -58,10 +58,15 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.6.0";
+      const ROUTER_VERSION = "v1.7.0";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
+      const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
+      const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+      let centralHoldMonitorStarted = false;
+      let centralHoldMonitorBusy = false;
+
       const MODULE_MAP = {
         "send-message": "sendmsg.html",
         "sendmessage": "sendmsg.html",
@@ -93,6 +98,128 @@
 
       function debugLog(level, step, message, data) {
         try { if (window.GcbDebug) window.GcbDebug.log(level, step, message, data); } catch (_) {}
+      }
+
+      function readCentralHoldRecords() {
+        try {
+          const raw = localStorage.getItem(GCB_ACTIVE_HOLDS_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function writeCentralHoldRecords(records) {
+        try { localStorage.setItem(GCB_ACTIVE_HOLDS_KEY, JSON.stringify(records || {})); } catch (_) {}
+      }
+
+      function broadcastCentralHoldEvent(type, record) {
+        try {
+          if (typeof BroadcastChannel !== "undefined") {
+            const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
+            channel.postMessage({ type: type, record: record || null, time: new Date().toISOString() });
+            channel.close();
+          }
+        } catch (_) {}
+      }
+
+      function isHoldDue(record, nowMs) {
+        if (!record || record.status !== "HOLD" || record.resumeSent) return false;
+        const maxSeconds = Number(record.maxHoldTime || 0);
+        const startedAt = Number(record.holdStartTimeMs || 0);
+        if (!maxSeconds || !startedAt) return false;
+        return (nowMs - startedAt) >= (maxSeconds * 1000);
+      }
+
+      function isStaleHoldRecord(record, nowMs) {
+        const startedAt = Number(record && record.holdStartTimeMs || 0);
+        return startedAt && (nowMs - startedAt) > (4 * 60 * 60 * 1000);
+      }
+
+      async function sendAutoResumeForRecord(record) {
+        const token = Auth.getAccessToken();
+        if (!token) throw new Error("OAuth token missing for central auto-resume.");
+        if (!record.conversationId) throw new Error("conversationId missing in hold record.");
+        if (!record.agentCommunicationId) throw new Error("agentCommunicationId missing in hold record.");
+        if (!record.resumeMessageText) throw new Error("resumeMessageText missing in hold record.");
+        await Api.sendMessage(token, record.conversationId, record.agentCommunicationId, record.resumeMessageText);
+      }
+
+      async function processCentralHoldMonitor(reason) {
+        if (centralHoldMonitorBusy) return;
+        centralHoldMonitorBusy = true;
+        const nowMs = Date.now();
+        try {
+          const records = readCentralHoldRecords();
+          let changed = false;
+          const keys = Object.keys(records);
+
+          for (const key of keys) {
+            const record = records[key];
+            if (isStaleHoldRecord(record, nowMs)) {
+              delete records[key];
+              changed = true;
+              continue;
+            }
+
+            if (!isHoldDue(record, nowMs)) continue;
+
+            record.status = "RESUME_IN_PROGRESS";
+            record.resumeSent = true;
+            record.resumeAttemptTimeUtc = new Date().toISOString();
+            record.resumeAttemptReason = reason || "CENTRAL_MONITOR_DUE";
+            records[key] = record;
+            writeCentralHoldRecords(records);
+            broadcastCentralHoldEvent("RESUME_IN_PROGRESS", record);
+            debugLog("INFO", "CENTRAL_AUTO_RESUME_START", "key=" + key + " | conversationId=" + C.safeString(record.conversationId));
+
+            try {
+              await sendAutoResumeForRecord(record);
+              record.status = "RESUMED_AUTO";
+              record.resumeTimeUtc = new Date().toISOString();
+              record.reason = "CENTRAL_MONITOR_MAX_HOLD_TIME";
+              records[key] = record;
+              writeCentralHoldRecords(records);
+              broadcastCentralHoldEvent("RESUMED_AUTO", record);
+              if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "success", "Auto resume sent by central monitor.");
+              debugLog("INFO", "CENTRAL_AUTO_RESUME_OK", "key=" + key + " | conversationId=" + C.safeString(record.conversationId));
+              changed = true;
+            } catch (error) {
+              record.status = "HOLD";
+              record.resumeSent = false;
+              record.lastError = error && error.message ? error.message : String(error);
+              record.lastErrorTimeUtc = new Date().toISOString();
+              records[key] = record;
+              writeCentralHoldRecords(records);
+              broadcastCentralHoldEvent("AUTO_RESUME_FAILED", record);
+              if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "failed", "Central auto-resume failed: " + record.lastError);
+              debugLog("ERROR", "CENTRAL_AUTO_RESUME_FAILED", "key=" + key + " | " + record.lastError);
+              changed = true;
+            }
+          }
+
+          if (changed) renderCentralLogs();
+        } finally {
+          centralHoldMonitorBusy = false;
+        }
+      }
+
+      function startCentralHoldMonitor() {
+        if (centralHoldMonitorStarted) return;
+        centralHoldMonitorStarted = true;
+        debugLog("INFO", "CENTRAL_HOLD_MONITOR_START", "Local hold monitor active. No Genesys polling; sends Resume only when a local hold record becomes due.");
+        processCentralHoldMonitor("STARTUP");
+        setInterval(function () { processCentralHoldMonitor("INTERVAL"); }, 2000);
+        window.addEventListener("storage", function (event) {
+          if (event && event.key === GCB_ACTIVE_HOLDS_KEY) processCentralHoldMonitor("STORAGE");
+        });
+        try {
+          if (typeof BroadcastChannel !== "undefined") {
+            const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
+            channel.onmessage = function () { processCentralHoldMonitor("BROADCAST"); };
+          }
+        } catch (_) {}
       }
 
       function validateCurrentUrl() {
@@ -231,6 +358,7 @@
 
         renderMeta(user);
         renderStatusLines();
+        startCentralHoldMonitor();
         const moduleName = getModuleName();
         if (!moduleName) {
           setStatus("GCB Ready. OAuth success. No business module selected.", "success");
