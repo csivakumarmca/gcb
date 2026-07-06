@@ -1,6 +1,6 @@
-# Genesys Context Bridge (GCB) v1.7.0
+# Genesys Context Bridge (GCB) v1.7.1
 
-Update in v1.7.0:
+Update in v1.7.1:
 - Added central Hold auto-resume monitor in `index.html`.
 - `holdresume.html` writes a separate local hold record per held interaction using conversationId + agentCommunicationId + customerCommunicationId.
 - `index.html` checks local browser storage every 2 seconds only; it does not poll Genesys APIs.

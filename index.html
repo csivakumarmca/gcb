@@ -58,7 +58,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.0";
+      const ROUTER_VERSION = "v1.7.1";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -132,6 +132,14 @@
         return (nowMs - startedAt) >= (maxSeconds * 1000);
       }
 
+      function isHoldPageActivelyHandling(record, nowMs) {
+        if (!record) return false;
+        if (record.activePageVisible !== true) return false;
+        const heartbeat = Number(record.activePageHeartbeatMs || 0);
+        if (!heartbeat) return false;
+        return (nowMs - heartbeat) <= 5000;
+      }
+
       function isStaleHoldRecord(record, nowMs) {
         const startedAt = Number(record && record.holdStartTimeMs || 0);
         return startedAt && (nowMs - startedAt) > (4 * 60 * 60 * 1000);
@@ -164,6 +172,11 @@
             }
 
             if (!isHoldDue(record, nowMs)) continue;
+
+            if (isHoldPageActivelyHandling(record, nowMs)) {
+              debugLog("INFO", "CENTRAL_AUTO_RESUME_SKIP_ACTIVE_PAGE", "key=" + key + " | hold page is active; local hold page timer will handle auto-resume.");
+              continue;
+            }
 
             record.status = "RESUME_IN_PROGRESS";
             record.resumeSent = true;

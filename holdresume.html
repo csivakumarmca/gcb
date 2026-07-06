@@ -670,7 +670,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.0";
+    const HR_VERSION = "v1.7.1";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -690,6 +690,8 @@
     const STORAGE_AUTH_RECOVERY_PREFIX = "gcb_hr_auth_recovery_";
     const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
     const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+    const GCB_HOLD_PAGE_ID = "holdresume-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+    const GCB_HOLD_HEARTBEAT_STALE_MS = 5000;
 
     let isProcessing = false;
     let isInitialSummaryLoading = true;
@@ -1192,6 +1194,37 @@
       try { window.dispatchEvent(new CustomEvent("gcb-hold-monitor-event", { detail: { type: type, record: record || null } })); } catch (_) {}
     }
 
+    function touchCentralHoldRecord(activity) {
+      const records = readCentralHoldRecords();
+      const key = getCentralHoldKey();
+      const record = records[key];
+      if (!record || record.status !== "HOLD") return;
+      record.activePageId = GCB_HOLD_PAGE_ID;
+      record.activePageHeartbeatMs = Date.now();
+      record.activePageHeartbeatUtc = new Date().toISOString();
+      record.activePageVisible = !document.hidden;
+      record.activePageActivity = activity || "HEARTBEAT";
+      records[key] = record;
+      writeCentralHoldRecords(records);
+    }
+
+    function startCentralHoldHeartbeat() {
+      setInterval(function () {
+        if (isOnHold) {
+          touchCentralHoldRecord("INTERVAL");
+          applyCentralAutoResumeIfPresent();
+        }
+      }, 1000);
+      document.addEventListener("visibilitychange", function () {
+        if (isOnHold) touchCentralHoldRecord(document.hidden ? "HIDDEN" : "VISIBLE");
+        if (!document.hidden) applyCentralAutoResumeIfPresent();
+      });
+      window.addEventListener("focus", function () {
+        if (isOnHold) touchCentralHoldRecord("FOCUS");
+        applyCentralAutoResumeIfPresent();
+      });
+    }
+
     function saveCentralHoldRecord() {
       if (!CONFIG.conversationId || !(CONFIG.agentCommunicationId || CONFIG.communicationId)) return;
       const records = readCentralHoldRecords();
@@ -1212,6 +1245,11 @@
         holdStartTimeUtc: new Date(nowMs).toISOString(),
         status: "HOLD",
         resumeSent: false,
+        activePageId: GCB_HOLD_PAGE_ID,
+        activePageHeartbeatMs: nowMs,
+        activePageHeartbeatUtc: new Date(nowMs).toISOString(),
+        activePageVisible: !document.hidden,
+        activePageActivity: "HOLD_STARTED",
         source: "holdresume.html"
       };
       records[key] = record;
@@ -1229,6 +1267,8 @@
       record.resumeSent = status === "RESUMED_AUTO" || status === "RESUMED_MANUAL";
       record.resumeTimeUtc = new Date().toISOString();
       record.reason = reason || "";
+      record.activePageVisible = false;
+      record.activePageActivity = status;
       records[key] = record;
       writeCentralHoldRecords(records);
       broadcastCentralHoldEvent(status, record);
@@ -2240,10 +2280,7 @@
         renderDebugPanel();
       }
 
-      document.addEventListener("visibilitychange", function () {
-        if (!document.hidden) applyCentralAutoResumeIfPresent();
-      });
-      window.addEventListener("focus", applyCentralAutoResumeIfPresent);
+      startCentralHoldHeartbeat();
       window.addEventListener("storage", function (event) {
         if (event && event.key === GCB_ACTIVE_HOLDS_KEY) applyCentralAutoResumeIfPresent();
       });
