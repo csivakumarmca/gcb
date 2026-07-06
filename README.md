@@ -1,65 +1,41 @@
-# GCB Generic v1.7.4 - Clean Common Params + Owned Communication Resolve
+# GCB v1.7.5 - Script-first communication resolver
 
-## Key change
-Agent Script CommonParams can now be simplified. The application resolves the connected communication owned by the logged-in Genesys user using existing Genesys APIs.
+This package keeps the v1.7.4 clean/hybrid URL approach but updates the communication resolver.
 
-Recommended CommonParams:
+## Important Agent Script CommonParams
+
+Use the hybrid CommonParams again:
 
 ```javascript
 AFT_URL_GCB_CommonParams =
-  "&conversationId=" + {{Scripter.Interaction ID}}
+"&conversationId=" + {{Scripter.Interaction ID}} +
+"&communicationId=" + {{Scripter.Agent Communication ID}} +
+"&agentCommunicationId=" + {{Scripter.Agent Communication ID}} +
+"&participantId=" + {{Scripter.Agent Participant ID}} +
+"&agentParticipantId=" + {{Scripter.Agent Participant ID}} +
+"&customerCommunicationId=" + {{Scripter.Customer Communication ID}} +
+"&agentName=" + {{Scripter.Agent Name}}
 ```
 
-`source=AgentScript` is no longer required in CommonParams. The pages default `source` to `AgentScript`. You may still pass it from URL if needed for debug.
+Do not pass `source`; the app defaults to AgentScript internally.
 
-## Parameters no longer required in CommonParams
+## URL cache
 
-- communicationId
-- agentCommunicationId
-- participantId
-- agentParticipantId
-- customerCommunicationId
-- agentName
-- source
+Use a new cache value, for example:
 
-## Still required in module URLs
+```text
+v=175
+```
 
-### sendmsg.html
-- action
-- requestType
-- greetingEnabled
-- joinedMessageText
-- messageText
-- customerName / subject / language if used by template
-- requestId / reload if used by Agent Script trigger
+## Resolver change
 
-### holdresume.html
-- holdMessageText
-- resumeMessageText
-- maxHoldAttempts
-- maxHoldTime
-- hold alert settings
+Previous v1.7.4 required the conversation payload to prove that the connected communication is owned by the logged-in user. In Genesys message conversation payloads this ownership is not always exposed clearly, so it blocked valid Agent Script communication IDs.
 
-### prospects.html
-- version and optional data table / wrap-up config
+v1.7.5 now:
 
-## API usage
-The pages reuse existing Genesys API calls:
+1. Uses Agent Script `agentCommunicationId` / `agentParticipantId` first.
+2. Validates that the communication exists in the conversation under an agent-like participant and is connected.
+3. Falls back to logged-in user owned connected communication search if script values are missing.
+4. Lets the final Genesys send API return any real owner/connected error if the script value is stale.
 
-- GET /api/v2/users/me?expand=authorization
-- GET /api/v2/conversations/messages/{conversationId}
-
-These calls are used to resolve the correct connected agent communication for the logged-in browser/session. This avoids stale communication errors such as:
-
-- User is not an owner of this communication
-- Messages may only be sent for connected communications
-
-## Upload
-Upload the full package to GitHub/root hosting:
-
-- index.html
-- sendmsg.html
-- holdresume.html
-- prospects.html
-- js/
-- README.md
+Replace the full package in the GitHub/root hosting folder.

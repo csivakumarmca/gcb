@@ -670,7 +670,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.4";
+    const HR_VERSION = "v1.7.5";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1604,7 +1604,7 @@
      * Genesys message send
      ************************************************************/
     async function resolveCommunicationId(token) {
-      // v1.7.4: do not trust communication IDs from the Agent Script URL blindly.
+      // v1.7.5: do not trust communication IDs from the Agent Script URL blindly.
       // Resolve the connected communication owned by the logged-in Genesys user.
       const userEndpoint = API_BASE + "/api/v2/users/me?expand=authorization";
       const userResponse = await fetch(userEndpoint, {
@@ -1632,7 +1632,7 @@
       });
 
       if (!resolved || !resolved.communicationId) {
-        throw new Error("No connected agent communication owned by the logged-in user was found for this conversation. Script communication values may be stale or from another browser/session.");
+        throw new Error("No connected agent communication could be resolved for this conversation. Script communication values may be stale/disconnected, and no owned connected fallback was found.");
       }
 
       CONFIG.agentCommunicationId = resolved.communicationId;
@@ -1740,19 +1740,21 @@
         return !!p && isAgentLikeParticipant(p) && !!userId && getParticipantUserId(p) === userId;
       }
 
+      // v1.7.5: Agent Script communication values are the first source of truth.
+      // Use them when they are present under an agent-like participant and connected.
       if (preferredCommunicationId) {
         const p = findParticipantByCommunicationId(conversation, preferredCommunicationId);
-        if (isOwned(p)) {
+        if (p && isAgentLikeParticipant(p)) {
           const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-          if (id) return { participantId: safeString(p.id), communicationId: id, source: "URL_COMM_OWNED_CONNECTED" };
+          if (id) return { participantId: safeString(p.id), communicationId: id, source: "URL_COMM_SCRIPT_CONNECTED" };
         }
       }
 
       if (preferredParticipantId) {
         const p = findParticipantById(conversation, preferredParticipantId);
-        if (isOwned(p)) {
+        if (p && isAgentLikeParticipant(p)) {
           const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-          if (id) return { participantId: safeString(p.id), communicationId: id, source: "URL_PARTICIPANT_OWNED_CONNECTED" };
+          if (id) return { participantId: safeString(p.id), communicationId: id, source: "URL_PARTICIPANT_SCRIPT_CONNECTED" };
         }
       }
 

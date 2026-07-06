@@ -1,4 +1,4 @@
-/* GCB Genesys API Helpers v1.1.0 - owned connected agent communication resolver */
+/* GCB Genesys API Helpers v1.1.1 - script-first connected communication resolver */
 (function (global) {
   "use strict";
 
@@ -155,21 +155,23 @@
       return !!p && isAgentParticipant(p) && (!!userId && getParticipantUserId(p) === userId);
     }
 
-    // 1. Prefer the participant that owns the URL communication id, but only if it belongs to the logged-in user and is connected.
+    // 1. v1.7.5: Prefer Agent Script communication values first.
+    // Some Genesys message conversation payloads do not expose user ownership clearly,
+    // so do not block if the URL communication is present under an agent-like participant and connected.
     if (preferredCommunicationId) {
       const p = findParticipantByCommunicationId(conversation, preferredCommunicationId);
-      if (isOwned(p)) {
+      if (p && isAgentParticipant(p)) {
         const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-        if (id) return { participant: p, communicationId: id, source: "URL_COMM_OWNED_CONNECTED" };
+        if (id) return { participant: p, communicationId: id, source: "URL_COMM_SCRIPT_CONNECTED" };
       }
     }
 
-    // 2. Prefer the URL participant id, but only if it belongs to the logged-in user and has a connected communication.
+    // 2. Prefer the URL participant id when it has a connected agent-like communication.
     if (preferredParticipantId) {
       const p = findParticipantById(conversation, preferredParticipantId);
-      if (isOwned(p)) {
+      if (p && isAgentParticipant(p)) {
         const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-        if (id) return { participant: p, communicationId: id, source: "URL_PARTICIPANT_OWNED_CONNECTED" };
+        if (id) return { participant: p, communicationId: id, source: "URL_PARTICIPANT_SCRIPT_CONNECTED" };
       }
     }
 
@@ -226,7 +228,7 @@
 
     if (!owned || !owned.communicationId) {
       const userText = C.safeString(user && (user.name || user.email || user.id)) || "current user";
-      throw new Error("No connected agent communication owned by " + userText + " was found for this conversation. The Agent Script value may be stale, disconnected, or from another browser/session.");
+      throw new Error("No connected agent communication could be resolved for this conversation. Script values may be stale/disconnected, and no owned connected fallback was found for " + userText + ".");
     }
 
     return {

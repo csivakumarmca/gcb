@@ -1553,19 +1553,20 @@
         const preferredParticipantId = context.participantId;
         const isOwned = (p) => !!p && isAgentLikeParticipant(p) && !!userId && getParticipantUserId(p) === userId;
 
+        // v1.7.5: Agent Script communication values are the first source of truth.
         if (preferredCommunicationId) {
           const p = findParticipantByCommunicationId(conversation, preferredCommunicationId);
-          if (isOwned(p)) {
+          if (p && isAgentLikeParticipant(p)) {
             const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-            if (id) return { participantId: String(p.id || "").trim(), communicationId: id, source: "URL_COMM_OWNED_CONNECTED" };
+            if (id) return { participantId: String(p.id || "").trim(), communicationId: id, source: "URL_COMM_SCRIPT_CONNECTED" };
           }
         }
 
         if (preferredParticipantId) {
           const p = findParticipantById(conversation, preferredParticipantId);
-          if (isOwned(p)) {
+          if (p && isAgentLikeParticipant(p)) {
             const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-            if (id) return { participantId: String(p.id || "").trim(), communicationId: id, source: "URL_PARTICIPANT_OWNED_CONNECTED" };
+            if (id) return { participantId: String(p.id || "").trim(), communicationId: id, source: "URL_PARTICIPANT_SCRIPT_CONNECTED" };
           }
         }
 
@@ -1583,7 +1584,7 @@
         const conversation = await genesysGet(token, `/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}`);
         const resolved = resolveOwnedConnectedAgentParticipant(conversation, currentUser && currentUser.id);
         if (!resolved || !resolved.communicationId || !resolved.participantId) {
-          throw new Error("No connected agent communication owned by the logged-in user was found for Prospects. Script values may be stale or from another browser/session.");
+          throw new Error("No connected agent communication could be resolved for Prospects. Script values may be stale/disconnected, and no owned connected fallback was found.");
         }
         context.communicationId = resolved.communicationId;
         context.participantId = resolved.participantId;
