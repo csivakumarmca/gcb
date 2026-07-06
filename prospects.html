@@ -360,7 +360,6 @@
         conversationId: getParam("conversationId"),
         communicationId: getParam("communicationId"),
         participantId: getParam("participantId"),
-        source: getParam("source") || "AgentScript",
       };
 
       const OAUTH_CLIENT_ID = getParam("clientId") || sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_OAUTH_CLIENT_ID;
@@ -547,8 +546,6 @@
           return;
         }
 
-        await resolveProspectsCommunicationContext(token);
-        renderDebugParameters();
         await loadLiveData(token);
       }
 
@@ -1480,115 +1477,6 @@
         const payload = parseJson(text);
         if (!response.ok) throw new Error(payload.message || payload.error || `Wrap-up code create failed: ${response.status}`);
         return payload;
-      }
-
-      async function genesysGet(token, path) {
-        const response = await fetch(`${API_BASE}${path}`, {
-          method: "GET",
-          headers: {
-            Authorization: "Bearer " + token,
-            "Content-Type": "application/json",
-          },
-        });
-        const text = await response.text();
-        const payload = parseJson(text);
-        if (!response.ok) throw new Error(payload.message || payload.error || `Genesys GET failed: ${response.status}`);
-        return payload;
-      }
-
-      function getCommunicationArrays(participant) {
-        if (!participant) return [];
-        return [participant.messages, participant.message, participant.communications, participant.chats].filter(Array.isArray);
-      }
-
-      function isConnectedCommunication(item) {
-        return normalizeSearchText(item && item.state) === "connected";
-      }
-
-      function getParticipantUserId(participant) {
-        return String(
-          participant && (
-            participant.userId ||
-            (participant.user && (participant.user.id || participant.user.userId)) ||
-            (participant.userUri && String(participant.userUri).split("/").pop()) ||
-            ""
-          ) || ""
-        ).trim();
-      }
-
-      function isAgentLikeParticipant(participant) {
-        const purpose = normalizeSearchText(participant && participant.purpose);
-        return ["agent", "acd", "user", "internal"].includes(purpose);
-      }
-
-      function findParticipantById(conversation, participantId) {
-        const target = String(participantId || "").trim();
-        if (!target || !conversation || !Array.isArray(conversation.participants)) return null;
-        return conversation.participants.find((p) => String(p && p.id || "").trim() === target) || null;
-      }
-
-      function findParticipantByCommunicationId(conversation, communicationId) {
-        const target = String(communicationId || "").trim();
-        if (!target || !conversation || !Array.isArray(conversation.participants)) return null;
-        return conversation.participants.find((p) => getCommunicationArrays(p).some((arr) => arr.some((x) => String(x && x.id || "").trim() === target))) || null;
-      }
-
-      function extractConnectedCommunicationIdFromParticipant(participant, preferredId) {
-        const target = String(preferredId || "").trim();
-        for (const arr of getCommunicationArrays(participant)) {
-          if (target) {
-            const preferred = arr.find((x) => String(x && x.id || "").trim() === target && isConnectedCommunication(x));
-            if (preferred && preferred.id) return String(preferred.id).trim();
-          }
-          const connected = arr.find((x) => x && x.id && isConnectedCommunication(x));
-          if (connected && connected.id) return String(connected.id).trim();
-        }
-        return "";
-      }
-
-      function resolveOwnedConnectedAgentParticipant(conversation, currentUserId) {
-        const userId = String(currentUserId || "").trim();
-        const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
-        const preferredCommunicationId = context.communicationId;
-        const preferredParticipantId = context.participantId;
-        const isOwned = (p) => !!p && isAgentLikeParticipant(p) && !!userId && getParticipantUserId(p) === userId;
-
-        // v1.7.5: Agent Script communication values are the first source of truth.
-        if (preferredCommunicationId) {
-          const p = findParticipantByCommunicationId(conversation, preferredCommunicationId);
-          if (p && isAgentLikeParticipant(p)) {
-            const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-            if (id) return { participantId: String(p.id || "").trim(), communicationId: id, source: "URL_COMM_SCRIPT_CONNECTED" };
-          }
-        }
-
-        if (preferredParticipantId) {
-          const p = findParticipantById(conversation, preferredParticipantId);
-          if (p && isAgentLikeParticipant(p)) {
-            const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
-            if (id) return { participantId: String(p.id || "").trim(), communicationId: id, source: "URL_PARTICIPANT_SCRIPT_CONNECTED" };
-          }
-        }
-
-        for (const p of participants) {
-          if (!isOwned(p)) continue;
-          const id = extractConnectedCommunicationIdFromParticipant(p, "");
-          if (id) return { participantId: String(p.id || "").trim(), communicationId: id, source: "CURRENT_USER_CONNECTED_AGENT" };
-        }
-        return null;
-      }
-
-      async function resolveProspectsCommunicationContext(token) {
-        if (!context.conversationId) return;
-        const currentUser = await genesysGet(token, "/api/v2/users/me?expand=authorization");
-        const conversation = await genesysGet(token, `/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}`);
-        const resolved = resolveOwnedConnectedAgentParticipant(conversation, currentUser && currentUser.id);
-        if (!resolved || !resolved.communicationId || !resolved.participantId) {
-          throw new Error("No connected agent communication could be resolved for Prospects. Script values may be stale/disconnected, and no owned connected fallback was found.");
-        }
-        context.communicationId = resolved.communicationId;
-        context.participantId = resolved.participantId;
-        state.debugInfo.submitLog = `communication resolved: ${resolved.source}`;
       }
 
       async function setMessageConversationWrapup(token, wrapupCodeId, notes) {
