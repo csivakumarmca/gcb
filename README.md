@@ -1,4 +1,4 @@
-# Genesys Context Bridge (GCB) v1.6
+# Genesys Context Bridge (GCB) v1.6.1
 
 This package keeps business pages clean and moves the visible debug/status view to `index.html`.
 
@@ -30,3 +30,6 @@ For the Interaction Widget landing page, use:
 ```text
 https://<host>/gcb/index.html?langTag={{gcLangTag}}&gcTargetEnv={{gcTargetEnv}}&gcHostOrigin={{gcHostOrigin}}&conversationId={{gcConversationId}}&usePopupAuth={{gcUsePopupAuth}}&clientId=<clientId>&region=mypurecloud.ie
 ```
+
+
+Fix: Prospects submit no longer fails with `centralStatus is not defined`; central status updates are safely written to the index page.

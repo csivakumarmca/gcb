@@ -344,7 +344,7 @@
   <script>
       const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const DEFAULT_GENESYS_REGION = "mypurecloud.ie";
-      const DEFAULT_APP_VERSION = "RakProspects_v3.12";
+      const DEFAULT_APP_VERSION = "Prospects_v3.12";
       const STORAGE_CLIENT_ID = "gcb_clientId";
       const STORAGE_REGION = "gcb_region";
       const STORAGE_PROSPECTS_ORIGINAL_QUERY = "gcb_prospects_original_query";
@@ -450,6 +450,33 @@
       const authRow = document.getElementById("authRow");
       const loginButton = document.getElementById("loginButton");
       const submitButton = document.querySelector(".submit-button");
+
+
+
+      function centralStatus(key, stateValue, reason) {
+        try {
+          if (!window.GcbDebug || !window.GcbDebug.setStatus) return;
+          const statusKeyMap = {
+            prospects: "prospects",
+            prospect: "prospects",
+            holdresume: "holdResume",
+            holdResume: "holdResume",
+            sendGreeting: "sendGreeting",
+            sendmsg: "sendGreeting",
+            oauth: "oauth"
+          };
+          const statusKey = statusKeyMap[key] || key;
+          const stateText = String(stateValue || "pending").toLowerCase();
+          const level = stateText === "failed" ? "ERROR" : "INFO";
+          const message = reason || "";
+          window.GcbDebug.setStatus(statusKey, stateText, message);
+          if (window.GcbDebug.log) {
+            window.GcbDebug.log(level, "STATUS_" + String(statusKey).toUpperCase(), message);
+          }
+        } catch (_) {
+          // Central debug must never block Prospects business submit/load.
+        }
+      }
 
       init();
 
