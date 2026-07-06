@@ -1263,9 +1263,20 @@
       const key = getCentralHoldKey();
       const record = records[key];
       if (!record) return;
+      const nowIso = new Date().toISOString();
       record.status = status;
-      record.resumeSent = status === "RESUMED_AUTO" || status === "RESUMED_MANUAL";
-      record.resumeTimeUtc = new Date().toISOString();
+      // RESUME_IN_PROGRESS is also treated as resumeSent=true so the central monitor will not send another Resume
+      // while a manual Resume or central Resume is already being processed.
+      record.resumeSent = status === "RESUME_IN_PROGRESS" || status === "RESUMED_AUTO" || status === "RESUMED_MANUAL";
+      if (status === "RESUME_IN_PROGRESS") {
+        record.resumeAttemptTimeUtc = nowIso;
+      } else if (status === "HOLD") {
+        record.resumeSent = false;
+        delete record.resumeAttemptTimeUtc;
+        delete record.resumeTimeUtc;
+      } else {
+        record.resumeTimeUtc = nowIso;
+      }
       record.reason = reason || "";
       record.activePageVisible = false;
       record.activePageActivity = status;
@@ -1281,15 +1292,30 @@
 
     function applyCentralAutoResumeIfPresent() {
       const record = readOwnCentralHoldRecord();
-      if (!record || record.status !== "RESUMED_AUTO") return false;
+      if (!record) return false;
+
+      if (record.status === "RESUME_IN_PROGRESS" && isOnHold) {
+        const btn = document.getElementById("holdResumeBtn");
+        if (btn) btn.disabled = true;
+        setStatus("Resume is already in progress. Please wait...", "info");
+        addDebug("CENTRAL_RESUME_IN_PROGRESS_SEEN", "key=" + record.key);
+        return true;
+      }
+
+      if (record.status !== "RESUMED_AUTO" && record.status !== "RESUMED_MANUAL") return false;
       if (!isOnHold) return true;
       isOnHold = false;
       persistButtonState();
       stopMaxHoldTimer(true);
       updateButtonState();
-      setStatus("Auto resume was already sent by central GCB monitor.", "success");
-      showPersistentAlert("Auto resume was sent by the central GCB monitor because maximum hold duration was reached.", "warning");
-      addDebug("CENTRAL_AUTO_RESUME_APPLIED", "key=" + record.key);
+      if (record.status === "RESUMED_AUTO") {
+        setStatus("Auto resume was already sent by central GCB monitor.", "success");
+        showPersistentAlert("Auto resume was sent by the central GCB monitor because maximum hold duration was reached.", "warning");
+        addDebug("CENTRAL_AUTO_RESUME_APPLIED", "key=" + record.key);
+      } else {
+        setStatus("Resume was already completed.", "success");
+        addDebug("CENTRAL_MANUAL_RESUME_APPLIED", "key=" + record.key);
+      }
       hideStatusSoon();
       return true;
     }
@@ -2218,6 +2244,17 @@
         return;
       }
 
+      if (action === "RESUME") {
+        const record = readOwnCentralHoldRecord();
+        if (record && (record.status === "RESUME_IN_PROGRESS" || record.status === "RESUMED_AUTO" || record.status === "RESUMED_MANUAL" || record.resumeSent === true)) {
+          addDebug("MANUAL_RESUME_SKIPPED", "Resume already handled or in progress by central/local record. status=" + safeString(record.status));
+          applyCentralAutoResumeIfPresent();
+          return;
+        }
+        // Lock the central hold record before sending the manual Resume so the index monitor cannot also send Resume.
+        updateCentralHoldRecordStatus("RESUME_IN_PROGRESS", "MANUAL_RESUME_CLICK_START");
+      }
+
       isProcessing = true;
       updateButtonState();
       setStatus(action === "HOLD" ? "Sending Hold message..." : "Sending Resume message...", "info");
@@ -2246,6 +2283,10 @@
         await refreshHoldSummaryAfterAction(action);
         hideStatusSoon();
       } catch (err) {
+        if (action === "RESUME") {
+          // Manual Resume failed, unlock the central record so the central monitor can still retry if the hold is due.
+          updateCentralHoldRecordStatus("HOLD", "MANUAL_RESUME_FAILED_UNLOCK");
+        }
         setStatus(err.message || String(err), "error");
         addDebug("CLICK_FAILED", err.message || String(err));
       } finally {

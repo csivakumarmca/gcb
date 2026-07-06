@@ -1,6 +1,6 @@
-# Genesys Context Bridge (GCB) v1.7.1
+# Genesys Context Bridge (GCB) v1.7.2
 
-Update in v1.7.1:
+Update in v1.7.2:
 - Added central Hold auto-resume monitor in `index.html`.
 - `holdresume.html` writes a separate local hold record per held interaction using conversationId + agentCommunicationId + customerCommunicationId.
 - `index.html` checks local browser storage every 2 seconds only; it does not poll Genesys APIs.
@@ -59,3 +59,11 @@ https://<host>/gcb/index.html?langTag={{gcLangTag}}&gcTargetEnv={{gcTargetEnv}}&
 
 
 Fix: Prospects submit no longer fails with `centralStatus is not defined`; central status updates are safely written to the index page.
+
+
+## v1.7.2
+
+- Fixed manual Resume + central auto-resume race condition.
+- When manual Resume starts, holdresume.html marks the shared hold record as RESUME_IN_PROGRESS before sending Gen-Resume-33.
+- index.html central monitor will skip records marked RESUME_IN_PROGRESS/RESUMED_AUTO/RESUMED_MANUAL, preventing duplicate Gen-Resume-33.
+- If manual Resume fails, the hold record is unlocked back to HOLD so central monitor can retry if due.
