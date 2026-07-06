@@ -1,69 +1,65 @@
-# Genesys Context Bridge (GCB) v1.7.2
+# GCB Generic v1.7.4 - Clean Common Params + Owned Communication Resolve
 
-Update in v1.7.2:
-- Added central Hold auto-resume monitor in `index.html`.
-- `holdresume.html` writes a separate local hold record per held interaction using conversationId + agentCommunicationId + customerCommunicationId.
-- `index.html` checks local browser storage every 2 seconds only; it does not poll Genesys APIs.
-- When a local hold record reaches `maxHoldTime`, `index.html` sends `resumeMessageText` once using the stored `agentCommunicationId`, then marks the record `RESUMED_AUTO`.
-- When the agent returns to the original Hold page, `holdresume.html` reads the central status and changes the button back to Hold.
+## Key change
+Agent Script CommonParams can now be simplified. The application resolves the connected communication owned by the logged-in Genesys user using existing Genesys APIs.
 
-Important limitation:
-- This is browser-session based. It works while the Interaction Widget `index.html` remains loaded in the agent browser. It is not a server-side guarantee if the browser closes, machine sleeps, or the widget is unloaded.
+Recommended CommonParams:
 
-Upload the full package to GitHub Pages root, or replace at least:
-- `index.html`
-- `holdresume.html`
-- `js/`
-
-# Genesys Context Bridge (GCB) v1.6.2
-
-Fix in v1.6.2:
-- Send Message now sends joined/greeting on the agent/non-external communication ID.
-- `customerCommunicationId` is used only for session duplicate key, not for sending outbound messages.
-- This fixes Genesys API error: `Bad request: messages may only be sent for non-external communications`.
-
-Upload the full package to GitHub Pages root, or replace at least `js/send-message.js`.
-
-# Genesys Context Bridge (GCB) v1.6.1
-
-This package keeps business pages clean and moves the visible debug/status view to `index.html`.
-
-## Visible debug/status
-
-`index.html` shows only four standard status lines:
-
-1. OAuth - success/failed with reason
-2. Send Greeting - success/failed with reason
-3. Hold / Resume - success/failed with reason
-4. Prospects - success/failed with reason
-
-Detailed logs are hidden by default and can be opened using **Show details**.
-
-## Pages
-
-- `index.html` - landing, OAuth health-check, central status/debug
-- `sendmsg.html` - background processor for joined/greeting messages
-- `holdresume.html` - Hold/Resume page
-- `prospects.html` - Prospects wrap-up page
-
-## Debug behavior
-
-Module pages silently write logs/status to browser localStorage using `js/gcb-debug.js`.
-Visible module debug panels are disabled by default. Use `pageDebug=true` only if a visible debug panel is needed on a module page.
-
-For the Interaction Widget landing page, use:
-
-```text
-https://<host>/gcb/index.html?langTag={{gcLangTag}}&gcTargetEnv={{gcTargetEnv}}&gcHostOrigin={{gcHostOrigin}}&conversationId={{gcConversationId}}&usePopupAuth={{gcUsePopupAuth}}&clientId=<clientId>&region=mypurecloud.ie
+```javascript
+AFT_URL_GCB_CommonParams =
+  "&conversationId=" + {{Scripter.Interaction ID}}
 ```
 
+`source=AgentScript` is no longer required in CommonParams. The pages default `source` to `AgentScript`. You may still pass it from URL if needed for debug.
 
-Fix: Prospects submit no longer fails with `centralStatus is not defined`; central status updates are safely written to the index page.
+## Parameters no longer required in CommonParams
 
+- communicationId
+- agentCommunicationId
+- participantId
+- agentParticipantId
+- customerCommunicationId
+- agentName
+- source
 
-## v1.7.2
+## Still required in module URLs
 
-- Fixed manual Resume + central auto-resume race condition.
-- When manual Resume starts, holdresume.html marks the shared hold record as RESUME_IN_PROGRESS before sending Gen-Resume-33.
-- index.html central monitor will skip records marked RESUME_IN_PROGRESS/RESUMED_AUTO/RESUMED_MANUAL, preventing duplicate Gen-Resume-33.
-- If manual Resume fails, the hold record is unlocked back to HOLD so central monitor can retry if due.
+### sendmsg.html
+- action
+- requestType
+- greetingEnabled
+- joinedMessageText
+- messageText
+- customerName / subject / language if used by template
+- requestId / reload if used by Agent Script trigger
+
+### holdresume.html
+- holdMessageText
+- resumeMessageText
+- maxHoldAttempts
+- maxHoldTime
+- hold alert settings
+
+### prospects.html
+- version and optional data table / wrap-up config
+
+## API usage
+The pages reuse existing Genesys API calls:
+
+- GET /api/v2/users/me?expand=authorization
+- GET /api/v2/conversations/messages/{conversationId}
+
+These calls are used to resolve the correct connected agent communication for the logged-in browser/session. This avoids stale communication errors such as:
+
+- User is not an owner of this communication
+- Messages may only be sent for connected communications
+
+## Upload
+Upload the full package to GitHub/root hosting:
+
+- index.html
+- sendmsg.html
+- holdresume.html
+- prospects.html
+- js/
+- README.md

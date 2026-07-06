@@ -670,7 +670,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.1";
+    const HR_VERSION = "v1.7.4";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1116,7 +1116,7 @@
       requestNotificationPermissionOnHold: getBoolParam("requestNotificationPermissionOnHold", true),
       notificationAutoCloseMs: Math.max(3000, getNumberParam("notificationAutoCloseMs", 12000)),
       autoRefreshDelayMs: Math.max(500, getNumberParam("autoRefreshDelayMs", 1200)),
-      source: getParam("source", "HoldResumePage")
+      source: getParam("source", "AgentScript")
     };
 
     if (CONFIG.clientId) sessionStorage.setItem(STORAGE_CLIENT_ID, CONFIG.clientId);
@@ -1604,7 +1604,17 @@
      * Genesys message send
      ************************************************************/
     async function resolveCommunicationId(token) {
-      if (CONFIG.communicationId) return CONFIG.communicationId;
+      // v1.7.4: do not trust communication IDs from the Agent Script URL blindly.
+      // Resolve the connected communication owned by the logged-in Genesys user.
+      const userEndpoint = API_BASE + "/api/v2/users/me?expand=authorization";
+      const userResponse = await fetch(userEndpoint, {
+        method: "GET",
+        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" }
+      });
+      const userText = await userResponse.text();
+      if (!userResponse.ok) throw new Error("Current user lookup failed. HTTP " + userResponse.status + " - " + userText);
+      const currentUser = userText ? JSON.parse(userText) : {};
+
       const endpoint = API_BASE + "/api/v2/conversations/messages/" + encodeURIComponent(CONFIG.conversationId);
       const response = await fetch(endpoint, {
         method: "GET",
@@ -1613,15 +1623,32 @@
       const text = await response.text();
       if (!response.ok) throw new Error("Communication lookup failed. HTTP " + response.status + " - " + text);
       const conversation = text ? JSON.parse(text) : {};
-      const communicationId = extractBestCommunicationId(conversation);
-      if (!communicationId) throw new Error("communicationId could not be resolved from conversation.");
-      CONFIG.communicationId = communicationId;
-      return communicationId;
+
+      const resolved = resolveOwnedConnectedAgentCommunication(conversation, currentUser.id, {
+        agentCommunicationId: CONFIG.agentCommunicationId || CONFIG.communicationId,
+        communicationId: CONFIG.communicationId,
+        agentParticipantId: CONFIG.agentParticipantId || CONFIG.participantId,
+        participantId: CONFIG.participantId
+      });
+
+      if (!resolved || !resolved.communicationId) {
+        throw new Error("No connected agent communication owned by the logged-in user was found for this conversation. Script communication values may be stale or from another browser/session.");
+      }
+
+      CONFIG.agentCommunicationId = resolved.communicationId;
+      CONFIG.communicationId = resolved.communicationId;
+      CONFIG.agentParticipantId = resolved.participantId || CONFIG.agentParticipantId;
+      CONFIG.participantId = resolved.participantId || CONFIG.participantId;
+      if (!CONFIG.customerCommunicationId) {
+        CONFIG.customerCommunicationId = extractBestCommunicationId(conversation, "customer") || extractBestCommunicationId(conversation, "external") || "";
+      }
+      addDebug("COMM_RESOLVED", "source=" + resolved.source + " | agentComm=" + CONFIG.agentCommunicationId + " | agentParticipant=" + CONFIG.agentParticipantId);
+      return resolved.communicationId;
     }
 
-    function extractBestCommunicationId(conversation) {
+    function extractBestCommunicationId(conversation, preferredPurpose) {
       if (!conversation || !Array.isArray(conversation.participants)) return "";
-      const preferredPurposes = ["customer", "external", "agent"];
+      const preferredPurposes = preferredPurpose ? [preferredPurpose] : ["customer", "external", "agent"];
       for (const purpose of preferredPurposes) {
         for (const participant of conversation.participants) {
           if (safeString(participant.purpose).toLowerCase() !== purpose) continue;
@@ -1629,6 +1656,7 @@
           if (id) return id;
         }
       }
+      if (preferredPurpose) return "";
       for (const participant of conversation.participants) {
         const id = extractCommunicationIdFromParticipant(participant);
         if (id) return id;
@@ -1646,6 +1674,94 @@
         if (firstWithId && firstWithId.id) return firstWithId.id;
       }
       return "";
+    }
+
+    function getCommunicationArrays(participant) {
+      if (!participant) return [];
+      return [participant.messages, participant.message, participant.communications, participant.chats].filter(Array.isArray);
+    }
+
+    function isConnectedCommunication(item) {
+      return safeString(item && item.state).toLowerCase() === "connected";
+    }
+
+    function getParticipantUserId(participant) {
+      return safeString(
+        participant && (
+          participant.userId ||
+          (participant.user && (participant.user.id || participant.user.userId)) ||
+          (participant.userUri && String(participant.userUri).split("/").pop())
+        )
+      );
+    }
+
+    function isAgentLikeParticipant(participant) {
+      const purpose = safeString(participant && participant.purpose).toLowerCase();
+      return purpose === "agent" || purpose === "acd" || purpose === "user" || purpose === "internal";
+    }
+
+    function findParticipantById(conversation, participantId) {
+      const target = safeString(participantId);
+      if (!target || !conversation || !Array.isArray(conversation.participants)) return null;
+      return conversation.participants.find(p => safeString(p && p.id) === target) || null;
+    }
+
+    function findParticipantByCommunicationId(conversation, communicationId) {
+      const target = safeString(communicationId);
+      if (!target || !conversation || !Array.isArray(conversation.participants)) return null;
+      return conversation.participants.find(function (p) {
+        return getCommunicationArrays(p).some(function (arr) {
+          return arr.some(x => x && safeString(x.id) === target);
+        });
+      }) || null;
+    }
+
+    function extractConnectedCommunicationIdFromParticipant(participant, preferredId) {
+      const target = safeString(preferredId);
+      for (const arr of getCommunicationArrays(participant)) {
+        if (target) {
+          const preferred = arr.find(x => x && safeString(x.id) === target && isConnectedCommunication(x));
+          if (preferred && preferred.id) return preferred.id;
+        }
+        const connected = arr.find(x => x && x.id && isConnectedCommunication(x));
+        if (connected && connected.id) return connected.id;
+      }
+      return "";
+    }
+
+    function resolveOwnedConnectedAgentCommunication(conversation, currentUserId, options) {
+      options = options || {};
+      const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
+      const userId = safeString(currentUserId);
+      const preferredCommunicationId = safeString(options.agentCommunicationId || options.communicationId);
+      const preferredParticipantId = safeString(options.agentParticipantId || options.participantId);
+
+      function isOwned(p) {
+        return !!p && isAgentLikeParticipant(p) && !!userId && getParticipantUserId(p) === userId;
+      }
+
+      if (preferredCommunicationId) {
+        const p = findParticipantByCommunicationId(conversation, preferredCommunicationId);
+        if (isOwned(p)) {
+          const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
+          if (id) return { participantId: safeString(p.id), communicationId: id, source: "URL_COMM_OWNED_CONNECTED" };
+        }
+      }
+
+      if (preferredParticipantId) {
+        const p = findParticipantById(conversation, preferredParticipantId);
+        if (isOwned(p)) {
+          const id = extractConnectedCommunicationIdFromParticipant(p, preferredCommunicationId);
+          if (id) return { participantId: safeString(p.id), communicationId: id, source: "URL_PARTICIPANT_OWNED_CONNECTED" };
+        }
+      }
+
+      for (const p of participants) {
+        if (!isOwned(p)) continue;
+        const id = extractConnectedCommunicationIdFromParticipant(p, "");
+        if (id) return { participantId: safeString(p.id), communicationId: id, source: "CURRENT_USER_CONNECTED_AGENT" };
+      }
+      return null;
     }
 
     function buildRequestId(action) {

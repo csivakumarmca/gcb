@@ -1,4 +1,4 @@
-/* GCB Send Message - Mandatory Joined + Optional Greeting v5.2.0 */
+/* GCB Send Message - Mandatory Joined + Optional Greeting v5.3.0 */
 (function (global) {
   "use strict";
 
@@ -6,7 +6,7 @@
   const Auth = global.RakAuth;
   const Api = global.GenesysApi;
 
-  const VERSION = "v5.2.0";
+  const VERSION = "v5.3.0";
   const LOCAL_REQUEST_DONE_PREFIX = "Bank_GCB_GREETING_DONE_";
   const LOCAL_REQUEST_LOCK_PREFIX = "Bank_GCB_GREETING_LOCK_";
   const REQUEST_LOCK_TTL_MS = 15000;
@@ -415,21 +415,25 @@
   }
 
   async function resolveContext(token) {
-    const resolved = await Api.resolveCommunicationContext(token, request.conversationId, {
+    const resolver = Api.resolveOwnedAgentCommunicationContext || Api.resolveCommunicationContext;
+    const resolved = await resolver(token, request.conversationId, {
       customerCommunicationId: request.customerCommunicationId,
       agentCommunicationId: request.agentCommunicationId,
+      communicationId: request.agentCommunicationId,
       participantId: request.participantId,
       agentParticipantId: request.participantId
     });
 
+    addDebug("COMM_RESOLVED", "source=" + (resolved.source || "LEGACY") + " | agentComm=" + (resolved.agentCommunicationId || "") + " | agentParticipant=" + (resolved.agentParticipantId || ""));
+
     return {
       conversationId: request.conversationId,
       customerCommunicationId: resolved.customerCommunicationId,
-      agentCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId,
+      agentCommunicationId: resolved.agentCommunicationId,
       agentParticipantId: resolved.agentParticipantId || request.participantId,
-      // Outbound messages must be sent on the agent/non-external communication.
+      // Outbound messages must be sent on the logged-in user's owned connected agent communication.
       // customerCommunicationId is kept only for duplicate-key/session identification.
-      sendCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId
+      sendCommunicationId: resolved.agentCommunicationId
     };
   }
 
