@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.5</title>
+  <title>GCB Hold Timer v1.7.2.6</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -14,24 +14,28 @@
     body { font-family: Arial, Helvetica, sans-serif; background:transparent; color:#0f172a; font-size:11px; }
 
     .timer-widget {
-      width:100%;
-      min-height:48px;
+      width:200px;
+      min-width:200px;
+      max-width:200px;
+      height:34px;
+      min-height:34px;
+      max-height:34px;
       border:1px solid var(--line);
-      border-radius:8px;
+      border-radius:5px;
       background:#fff;
-      padding:7px 9px;
-      box-shadow:0 1px 2px rgba(15,23,42,.08);
+      padding:3px 6px;
+      box-shadow:none;
       display:flex;
       flex-direction:column;
       justify-content:center;
-      gap:4px;
+      gap:2px;
     }
-    .topline { display:flex; align-items:center; gap:7px; min-width:0; }
-    .icon { width:18px; text-align:center; font-size:15px; flex:0 0 auto; }
-    .label { flex:1; min-width:0; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#0f172a; }
-    .time { flex:0 0 auto; font-size:20px; line-height:20px; font-weight:bold; color:var(--blueText); font-variant-numeric:tabular-nums; text-align:right; }
-    .sub { color:var(--muted); font-size:10px; line-height:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .bar { height:4px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
+    .topline { display:flex; align-items:center; gap:5px; min-width:0; height:20px; }
+    .icon { width:14px; text-align:center; font-size:12px; flex:0 0 auto; }
+    .label { flex:1; min-width:0; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#0f172a; font-size:11px; line-height:12px; }
+    .time { flex:0 0 auto; font-size:16px; line-height:18px; min-width:44px; font-weight:bold; color:var(--blueText); font-variant-numeric:tabular-nums; text-align:right; }
+    .sub { display:none; color:var(--muted); font-size:10px; line-height:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .bar { height:3px; margin-left:19px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
     .fill { height:100%; width:0%; background:var(--blue); border-radius:999px; transition:width .2s linear; }
 
     .timer-widget.idle { background:#f8fafc; }
@@ -45,36 +49,10 @@
     .exceeded .fill { background:#ef4444; width:100% !important; }
     @keyframes pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 0 3px rgba(239,68,68,.16)} }
 
-    /* Micro layout for Agent Script 35-38px web page component. */
-    body.compact .timer-widget {
-      height:34px;
-      min-height:34px;
-      max-height:34px;
-      border-radius:5px;
-      padding:3px 7px 3px 7px;
-      gap:2px;
-      box-shadow:none;
-    }
-    body.compact .topline { gap:5px; height:20px; }
-    body.compact .icon { width:14px; font-size:12px; }
-    body.compact .label { font-size:11px; line-height:12px; }
-    body.compact .time { font-size:16px; line-height:18px; min-width:44px; }
-    body.compact .sub { display:none; }
-    body.compact .bar { height:3px; margin-left:19px; }
-
-    /* Ultra mode if the script page gives only ~30px height. */
-    body.micro .timer-widget {
-      height:30px;
-      min-height:30px;
-      max-height:30px;
-      padding:2px 6px;
-      gap:1px;
-      border-radius:4px;
-    }
-    body.micro .topline { height:18px; }
-    body.micro .label { font-size:10px; }
-    body.micro .time { font-size:15px; line-height:16px; min-width:42px; }
-    body.micro .bar { height:2px; margin-left:17px; }
+    /* The 200px / 34px micro layout is now the default.
+       compact=true or mode=micro are no longer required, but if older URLs still pass them,
+       these classes do not change the layout. */
+    body.compact .timer-widget, body.micro .timer-widget { width:200px; min-width:200px; max-width:200px; height:34px; min-height:34px; max-height:34px; }
   </style>
 </head>
 <body>
@@ -91,7 +69,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.5";
+      const VERSION = "v1.7.2.6";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const params = new URLSearchParams(window.location.search || "");
