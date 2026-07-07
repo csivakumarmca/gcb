@@ -663,14 +663,14 @@
   <script src="./js/gcb-debug.js"></script>
   <script>
     /************************************************************
-     * HOLD RESUME PAGE - v1.7.2.9
+     * HOLD RESUME PAGE - v1.7.2.11
      * Uses existing Genesys client-side send-message approach.
      * v1.7.2.9 release note:
      * - Browser notification/taskbar attention kept as optional best-effort alert.
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.9";
+    const HR_VERSION = "v1.7.2.11";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1289,6 +1289,19 @@
       record.reason = reason || "";
       record.activePageVisible = false;
       record.activePageActivity = status;
+
+      // v1.7.2.11 reset fix:
+      // After Resume is completed, remove the active central hold record.
+      // holdtimer.html reads this storage key, so removing the record immediately resets
+      // the timer widget to "No active hold 00:00" even after a time-limit alert.
+      if (status === "RESUMED_AUTO" || status === "RESUMED_MANUAL") {
+        delete records[key];
+        writeCentralHoldRecords(records);
+        broadcastCentralHoldEvent(status, record);
+        addDebug("CENTRAL_HOLD_RECORD_REMOVED", "key=" + key + " | status=" + status + " | reason=" + safeString(reason));
+        return;
+      }
+
       records[key] = record;
       writeCentralHoldRecords(records);
       broadcastCentralHoldEvent(status, record);

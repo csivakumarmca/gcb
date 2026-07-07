@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.7</title>
+  <title>GCB Hold Timer v1.7.2.11</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -94,7 +94,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.7";
+      const VERSION = "v1.7.2.11";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const params = new URLSearchParams(window.location.search || "");
@@ -121,12 +121,22 @@
       function readRecords(){
         try { const raw=localStorage.getItem(GCB_ACTIVE_HOLDS_KEY); const obj=raw?JSON.parse(raw):{}; return obj && typeof obj==="object" && !Array.isArray(obj) ? obj : {}; } catch(e){ return {}; }
       }
+      function isActiveHoldRecord(record){
+        const status = String((record && record.status) || "");
+        return ["HOLD", "HOLD_EXCEEDED", "RESUME_IN_PROGRESS"].includes(status);
+      }
       function findRecord(){
         const records=readRecords();
         const exact=records[getCentralHoldKey()];
-        if (exact) return exact;
+
+        // IMPORTANT FIX v1.7.2.11:
+        // The exact central record may remain in localStorage after Resume as RESUMED_MANUAL.
+        // Do not display completed Resume records as active hold, otherwise the timer stays
+        // on "Time limit reached" after Resume.
+        if (isActiveHoldRecord(exact)) return exact;
+
         const vals=Object.values(records);
-        return vals.find(r => r && r.conversationId === CONFIG.conversationId && ["HOLD","HOLD_EXCEEDED","RESUME_IN_PROGRESS"].includes(String(r.status||""))) || null;
+        return vals.find(r => r && r.conversationId === CONFIG.conversationId && isActiveHoldRecord(r)) || null;
       }
       function mmss(sec){ sec=Math.max(0, Math.floor(Number(sec)||0)); const m=String(Math.floor(sec/60)).padStart(2,"0"); const s=String(sec%60).padStart(2,"0"); return m+":"+s; }
       function setCls(cls){ document.getElementById("widget").className="timer-widget "+cls; }
