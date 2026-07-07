@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.7.2.12</title>
+  <title>Agent Hold Summary v1.7.2.14</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -678,7 +678,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.13";
+    const HR_VERSION = "v1.7.2.14";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1484,6 +1484,7 @@
       setText("holdHistory", data.holdHistory || "");
 
       updateLimitVisualState();
+      applyVisibleTimerFromCentralRecord("APPLY_SUMMARY");
       updateButtonState();
     }
 
@@ -2195,6 +2196,84 @@
       } catch (_) {}
     }
 
+    function getOwnActiveCentralHoldRecord() {
+      const record = readOwnCentralHoldRecord();
+      if (!record) return null;
+      if (record.status !== "HOLD" && record.status !== "HOLD_EXCEEDED") return null;
+      if (!record.holdStartTimeMs) return null;
+      return record;
+    }
+
+    function applyVisibleTimerFromCentralRecord(source) {
+      const record = getOwnActiveCentralHoldRecord();
+
+      // If another HoldResume iframe/action page has completed Resume, the visible
+      // Hold Info page must reset immediately instead of keeping an old local timer.
+      if (!record) {
+        if (isOnHold || activeTimer) {
+          isOnHold = false;
+          persistButtonState();
+          stopMaxHoldTimer(true);
+          updateButtonState();
+          addDebug("VISIBLE_TIMER_RESET_FROM_CENTRAL", "source=" + safeString(source));
+        }
+        return false;
+      }
+
+      const startMs = Number(record.holdStartTimeMs || 0);
+      if (!Number.isFinite(startMs) || startMs <= 0) return false;
+
+      const maxSeconds = Math.max(0, Number(record.maxHoldTime || CONFIG.maxHoldTime || 0));
+      const totalSeconds = maxSeconds || Math.max(1, Math.floor((Date.now() - startMs) / 1000));
+      const expiresAt = maxSeconds ? (startMs + (maxSeconds * 1000)) : (Date.now() + 1000);
+
+      const currentKey = activeTimer ? String(activeTimer.startedAt || "") + "|" + String(activeTimer.expiresAt || "") : "";
+      const centralKey = String(startMs) + "|" + String(expiresAt);
+
+      isOnHold = true;
+      persistButtonState();
+
+      // Adopt the timer started by the Agent Script action iframe. This keeps the
+      // visible Hold Info page timer running even when that page was not reloaded.
+      if (!activeTimer || currentKey !== centralKey) {
+        activeTimer = {
+          startedAt: startMs,
+          expiresAt: expiresAt,
+          totalSeconds: totalSeconds,
+          autoResumeSent: record.resumeSent === true
+        };
+        try { localStorage.setItem(getTimerStateKey(), JSON.stringify(activeTimer)); } catch (_) {}
+        if (holdTimerInterval) clearInterval(holdTimerInterval);
+        holdTimerInterval = setInterval(tickTimer, 1000);
+        addDebug("VISIBLE_TIMER_ADOPTED_FROM_CENTRAL", "source=" + safeString(source) + " | startedAt=" + startMs + " | maxHoldTime=" + totalSeconds);
+      }
+
+      tickTimer();
+      updateButtonState();
+      return true;
+    }
+
+    function startVisibleTimerSync() {
+      setInterval(function () {
+        applyVisibleTimerFromCentralRecord("INTERVAL");
+      }, 1000);
+
+      window.addEventListener("storage", function (event) {
+        if (event && (event.key === GCB_ACTIVE_HOLDS_KEY || event.key === getTimerStateKey())) {
+          applyVisibleTimerFromCentralRecord("STORAGE");
+        }
+      });
+
+      try {
+        if (typeof BroadcastChannel !== "undefined") {
+          const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
+          channel.onmessage = function () {
+            applyVisibleTimerFromCentralRecord("BROADCAST");
+          };
+        }
+      } catch (_) {}
+    }
+
     function resetTimerIndicator(statusText) {
       const card = document.getElementById("timerIndicatorCard");
       const fill = document.getElementById("timerProgressFill");
@@ -2547,13 +2626,20 @@
       }
 
       startCentralHoldHeartbeat();
+      startVisibleTimerSync();
       window.addEventListener("storage", function (event) {
-        if (event && event.key === GCB_ACTIVE_HOLDS_KEY) applyCentralAutoResumeIfPresent();
+        if (event && event.key === GCB_ACTIVE_HOLDS_KEY) {
+          applyCentralAutoResumeIfPresent();
+          applyVisibleTimerFromCentralRecord("STORAGE_CENTRAL");
+        }
       });
       try {
         if (typeof BroadcastChannel !== "undefined") {
           const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
-          channel.onmessage = function () { applyCentralAutoResumeIfPresent(); };
+          channel.onmessage = function () {
+            applyCentralAutoResumeIfPresent();
+            applyVisibleTimerFromCentralRecord("BROADCAST_CENTRAL");
+          };
         }
       } catch (_) {}
 
@@ -2576,6 +2662,7 @@
       restoreButtonState();
       restoreMaxHoldTimer();
       applySummary(loadCachedSummary() || buildInitialSummaryFromParams());
+      applyVisibleTimerFromCentralRecord("INIT_AFTER_SUMMARY");
 
       if (!CONFIG.conversationId) {
         isInitialSummaryLoading = false;
