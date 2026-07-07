@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.11</title>
+  <title>GCB Hold Timer v1.7.2.18</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -94,7 +94,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.11";
+      const VERSION = "v1.7.2.18";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const params = new URLSearchParams(window.location.search || "");
@@ -129,7 +129,7 @@
         const records=readRecords();
         const exact=records[getCentralHoldKey()];
 
-        // IMPORTANT FIX v1.7.2.11:
+        // IMPORTANT FIX v1.7.2.18:
         // The exact central record may remain in localStorage after Resume as RESUMED_MANUAL.
         // Do not display completed Resume records as active hold, otherwise the timer stays
         // on "Time limit reached" after Resume.

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.7.2.15</title>
+  <title>Agent Hold Summary v1.7.2.18</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -696,14 +696,14 @@
   <script src="./js/gcb-debug.js"></script>
   <script>
     /************************************************************
-     * HOLD RESUME PAGE - v1.7.2.16
+     * HOLD RESUME PAGE - v1.7.2.18
      * Uses existing Genesys client-side send-message approach.
      * v1.7.2.9 release note:
      * - Browser notification/taskbar attention kept as optional best-effort alert.
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.16";
+    const HR_VERSION = "v1.7.2.18";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1143,15 +1143,15 @@
       debug: getBoolParam("debug", false),
       visibleDebug: getBoolParam("pageDebug", false) || getBoolParam("showPageDebug", false),
       alertBlinkEnabled: getBoolParam("alertBlinkEnabled", true),
-      alertSoundEnabled: getBoolParam("alertSoundEnabled", true),
+      alertSoundEnabled: false, // disabled in holdresume.html; holdtimer.html handles sound
       alertBlinkDurationMs: Math.max(3000, getNumberParam("alertBlinkDurationMs", 15000)),
       titleBlinkDurationMs: Math.max(3000, getNumberParam("titleBlinkDurationMs", 30000)),
       alertSoundRepeatCount: Math.max(1, getNumberParam("alertSoundRepeatCount", 3)),
       alertSoundDurationMs: Math.max(250, getNumberParam("alertSoundDurationMs", 650)),
       alertSoundGapMs: Math.max(80, getNumberParam("alertSoundGapMs", 250)),
-      browserNotificationEnabled: getBoolParam("browserNotificationEnabled", true),
-      taskbarBlinkEnabled: getBoolParam("taskbarBlinkEnabled", true),
-      requestNotificationPermissionOnHold: getBoolParam("requestNotificationPermissionOnHold", true),
+      browserNotificationEnabled: false, // disabled in holdresume.html; holdtimer.html handles browser notification
+      taskbarBlinkEnabled: false, // disabled in holdresume.html; holdtimer.html handles taskbar/browser attention
+      requestNotificationPermissionOnHold: false, // disabled in holdresume.html
       notificationAutoCloseMs: Math.max(3000, getNumberParam("notificationAutoCloseMs", 12000)),
       autoRefreshDelayMs: Math.max(500, getNumberParam("autoRefreshDelayMs", 1200)),
       source: getParam("source", "HoldResumePage")
