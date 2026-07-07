@@ -1,3 +1,5 @@
+# GCB v1.7.2.7 - Hold Timer Compact Width 200
+
 # GCB v1.7.2.3 - Manual Hold Alert + Timer Widget
 
 This package is based on the confirmed working **v1.7.2.2 SendMsg Fast** baseline.
@@ -153,7 +155,7 @@ AFT_URL_HoldTimer =
 ```
 
 
-## v1.7.2.6 - Hold Timer Micro Layout + Freeze Fix
+## v1.7.2.5 - Hold Timer Micro Layout + Freeze Fix
 - Updated `holdtimer.html` only.
 - `compact=true` now uses a one-line micro timer layout suitable for 35-38 px Agent Script web page height.
 - The title is next to the timer/progress bar.
@@ -162,9 +164,9 @@ AFT_URL_HoldTimer =
 - Recommended cache: `v=17225`.
 
 
-## v1.7.2.6 Hold Timer Fixed 200px
-- holdtimer.html micro design is now default.
-- Timer widget fixed width: 200px.
-- Timer widget fixed height: 34px.
-- `compact=true` and `mode=micro` are no longer required.
-- Timer remains frozen at maxHoldTime after hold limit is reached.
+## v1.7.2.7 update
+- Kept compact holdtimer design.
+- Changed compact timer width to fixed 200px.
+- No change to SendMsg, Hold/Resume or Prospects.
+- Timer still freezes at maxHoldTime after hold limit is reached.
+- Use `&compact=true`; `&mode=micro` is not required.
