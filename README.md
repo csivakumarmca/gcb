@@ -132,3 +132,31 @@ Use a fresh cache version:
 ```text
 v=17223
 ```
+
+
+## v1.7.2.4 Update
+- Updated `holdtimer.html` only.
+- Timer-only widget now freezes at `maxHoldTime` after the limit is reached instead of continuing to count upward.
+- Added optional `compact=true` URL parameter for smaller timer display on Summary/Product/Prospects tabs.
+- Manual Resume behavior remains unchanged. No automatic Resume is sent when `autoResumeEnabled=false`.
+
+Recommended timer-only URL:
+```javascript
+AFT_URL_HoldTimer =
+{{AFT_URL_GCB_RootURL}} +
+"holdtimer.html?" +
+"v=17224" +
+{{AFT_URL_GCB_CommonParams}} +
+"&maxHoldTime=30" +
+"&browserNotificationEnabled=true" +
+"&compact=true"
+```
+
+
+## v1.7.2.5 - Hold Timer Micro Layout + Freeze Fix
+- Updated `holdtimer.html` only.
+- `compact=true` now uses a one-line micro timer layout suitable for 35-38 px Agent Script web page height.
+- The title is next to the timer/progress bar.
+- When max hold time is reached, timer freezes at `maxHoldTime` and shows `Hold limit reached`.
+- No SendMsg, Prospects, or Hold/Resume control logic changes.
+- Recommended cache: `v=17225`.

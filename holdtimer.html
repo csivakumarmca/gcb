@@ -3,51 +3,101 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.3</title>
+  <title>GCB Hold Timer v1.7.2.5</title>
   <style>
-    :root { --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b; --line:#cbd5e1; --bg:#f8fafc; }
+    :root {
+      --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
+      --line:#cbd5e1; --bg:#f8fafc; --blue:#0ea5e9; --blueText:#0369a1;
+    }
     * { box-sizing: border-box; }
-    body { margin:0; padding:6px; font-family: Arial, Helvetica, sans-serif; background:transparent; color:#0f172a; font-size:12px; }
-    .timer-widget { border:1px solid var(--line); border-radius:8px; background:#fff; min-height:54px; display:flex; align-items:center; gap:10px; padding:8px 10px; box-shadow:0 1px 2px rgba(15,23,42,.08); }
+    html, body { margin:0; padding:0; overflow:hidden; }
+    body { font-family: Arial, Helvetica, sans-serif; background:transparent; color:#0f172a; font-size:11px; }
+
+    .timer-widget {
+      width:100%;
+      min-height:48px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#fff;
+      padding:7px 9px;
+      box-shadow:0 1px 2px rgba(15,23,42,.08);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      gap:4px;
+    }
+    .topline { display:flex; align-items:center; gap:7px; min-width:0; }
+    .icon { width:18px; text-align:center; font-size:15px; flex:0 0 auto; }
+    .label { flex:1; min-width:0; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#0f172a; }
+    .time { flex:0 0 auto; font-size:20px; line-height:20px; font-weight:bold; color:var(--blueText); font-variant-numeric:tabular-nums; text-align:right; }
+    .sub { color:var(--muted); font-size:10px; line-height:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .bar { height:4px; background:#e2e8f0; border-radius:999px; overflow:hidden; }
+    .fill { height:100%; width:0%; background:var(--blue); border-radius:999px; transition:width .2s linear; }
+
     .timer-widget.idle { background:#f8fafc; }
     .timer-widget.active { border-color:#38bdf8; background:#eff6ff; }
     .timer-widget.warning { border-color:#f59e0b; background:#fffbeb; }
     .timer-widget.exceeded { border-color:#ef4444; background:#fef2f2; animation:pulse 1s infinite; }
-    @keyframes pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 0 3px rgba(239,68,68,.18)} }
-    .icon { font-size:18px; width:24px; text-align:center; }
-    .main { flex:1; min-width:0; }
-    .label { font-weight:bold; color:#0f172a; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .sub { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .time { font-size:22px; font-weight:bold; color:#0369a1; min-width:82px; text-align:right; font-variant-numeric:tabular-nums; }
-    .exceeded .time { color:var(--danger); }
-    .warning .time { color:var(--warn); }
     .idle .time { color:var(--muted); }
-    .bar { height:5px; background:#e2e8f0; border-radius:999px; margin-top:5px; overflow:hidden; }
-    .fill { height:100%; width:0%; background:#0ea5e9; border-radius:999px; transition:width .25s linear; }
+    .warning .time { color:var(--warn); }
+    .exceeded .time { color:var(--danger); }
     .warning .fill { background:#f59e0b; }
     .exceeded .fill { background:#ef4444; width:100% !important; }
+    @keyframes pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 0 3px rgba(239,68,68,.16)} }
+
+    /* Micro layout for Agent Script 35-38px web page component. */
+    body.compact .timer-widget {
+      height:34px;
+      min-height:34px;
+      max-height:34px;
+      border-radius:5px;
+      padding:3px 7px 3px 7px;
+      gap:2px;
+      box-shadow:none;
+    }
+    body.compact .topline { gap:5px; height:20px; }
+    body.compact .icon { width:14px; font-size:12px; }
+    body.compact .label { font-size:11px; line-height:12px; }
+    body.compact .time { font-size:16px; line-height:18px; min-width:44px; }
+    body.compact .sub { display:none; }
+    body.compact .bar { height:3px; margin-left:19px; }
+
+    /* Ultra mode if the script page gives only ~30px height. */
+    body.micro .timer-widget {
+      height:30px;
+      min-height:30px;
+      max-height:30px;
+      padding:2px 6px;
+      gap:1px;
+      border-radius:4px;
+    }
+    body.micro .topline { height:18px; }
+    body.micro .label { font-size:10px; }
+    body.micro .time { font-size:15px; line-height:16px; min-width:42px; }
+    body.micro .bar { height:2px; margin-left:17px; }
   </style>
 </head>
 <body>
   <div id="widget" class="timer-widget idle">
-    <div class="icon" id="icon">⏱️</div>
-    <div class="main">
+    <div class="topline">
+      <div class="icon" id="icon">⏱️</div>
       <div class="label" id="label">No active hold</div>
-      <div class="sub" id="sub">Timer will appear when Hold is active.</div>
-      <div class="bar"><div id="fill" class="fill"></div></div>
+      <div class="time" id="time">00:00</div>
     </div>
-    <div class="time" id="time">00:00</div>
+    <div class="sub" id="sub">Timer will appear when Hold is active.</div>
+    <div class="bar"><div id="fill" class="fill"></div></div>
   </div>
 
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.3";
+      const VERSION = "v1.7.2.5";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const params = new URLSearchParams(window.location.search || "");
       function p(name, def){ const v=params.get(name); return v===null || v==="" ? def : v; }
       function n(name, def){ const v=Number(p(name, def)); return Number.isFinite(v) ? v : def; }
+      function b(name, def){ const raw=String(p(name, def ? "true" : "false")).toLowerCase(); return !(raw === "false" || raw === "0" || raw === "no"); }
       function sanitizeKey(value){ return String(value||"").replace(/[^a-zA-Z0-9_.:-]+/g,"_"); }
       const CONFIG = {
         conversationId:p("conversationId", ""),
@@ -55,8 +105,13 @@
         agentCommunicationId:p("agentCommunicationId", p("communicationId", "")),
         customerCommunicationId:p("customerCommunicationId", ""),
         maxHoldTime:n("maxHoldTime", 30),
-        browserNotificationEnabled:String(p("browserNotificationEnabled","true")).toLowerCase() !== "false"
+        browserNotificationEnabled:b("browserNotificationEnabled", true),
+        compact:b("compact", false),
+        mode:String(p("mode", "")).toLowerCase()
       };
+      if (CONFIG.compact) { document.body.classList.add("compact"); }
+      if (CONFIG.mode === "micro") { document.body.classList.add("compact", "micro"); }
+
       function getCentralHoldKey(){
         return sanitizeKey([CONFIG.conversationId || "NO_CONV", CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_AGENT_COMM", CONFIG.customerCommunicationId || "NO_CUSTOMER_COMM"].join("|"));
       }
@@ -73,6 +128,7 @@
       function mmss(sec){ sec=Math.max(0, Math.floor(Number(sec)||0)); const m=String(Math.floor(sec/60)).padStart(2,"0"); const s=String(sec%60).padStart(2,"0"); return m+":"+s; }
       function setCls(cls){ document.getElementById("widget").className="timer-widget "+cls; }
       function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent=txt; }
+      function setProgress(pct){ const fill=document.getElementById("fill"); if(fill) fill.style.width=Math.max(0, Math.min(100, pct || 0)) + "%"; }
       function notifyOnce(record){
         if (!CONFIG.browserNotificationEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
         const key="GCB_HOLD_ALERT_SENT_" + sanitizeKey(record.key || getCentralHoldKey());
@@ -85,25 +141,46 @@
       }
       function render(){
         const record=findRecord();
-        const fill=document.getElementById("fill");
         if (!record) {
-          setCls("idle"); setText("icon","⏱️"); setText("label","No active hold"); setText("sub","Timer will appear when Hold is active."); setText("time","00:00"); if(fill) fill.style.width="0%"; return;
+          setCls("idle");
+          setText("icon","⏱️");
+          setText("label","No active hold");
+          setText("sub","Timer will appear when Hold is active.");
+          setText("time","00:00");
+          setProgress(0);
+          return;
         }
         const status=String(record.status || "");
-        const max=Number(record.maxHoldTime || CONFIG.maxHoldTime || 0) || 1;
+        const max=Math.max(1, Number(record.maxHoldTime || CONFIG.maxHoldTime || 30));
         const start=Number(record.holdStartTimeMs || 0);
-        const elapsed=start ? Math.max(0, Math.floor((Date.now()-start)/1000)) : 0;
-        const remaining=Math.max(0, max-elapsed);
-        const pct=Math.max(0, Math.min(100, (elapsed/max)*100));
-        if (fill) fill.style.width=pct+"%";
-        if (status === "HOLD_EXCEEDED" || elapsed >= max) {
-          setCls("exceeded"); setText("icon","⚠️"); setText("label","Maximum hold duration reached"); setText("sub","Please click Resume to continue the chat."); setText("time", mmss(elapsed)); notifyOnce(record); return;
+        const rawElapsed=start ? Math.max(0, Math.floor((Date.now()-start)/1000)) : 0;
+        const cappedElapsed=Math.min(rawElapsed, max);   // IMPORTANT: freezes visible timer at maxHoldTime.
+        const pct=(cappedElapsed/max)*100;
+        setProgress(pct);
+
+        if (status === "HOLD_EXCEEDED" || rawElapsed >= max) {
+          setCls("exceeded");
+          setText("icon","⚠️");
+          setText("label","Hold limit reached");
+          setText("sub","Please click Resume to continue the chat.");
+          setText("time", mmss(max));                 // IMPORTANT: do not keep counting after limit.
+          notifyOnce(record);
+          return;
         }
         if (status === "RESUME_IN_PROGRESS") {
-          setCls("warning"); setText("icon","⏳"); setText("label","Resume in progress"); setText("sub","Please wait while Resume is being sent."); setText("time", mmss(elapsed)); return;
+          setCls("warning");
+          setText("icon","⏳");
+          setText("label","Resume in progress");
+          setText("sub","Please wait while Resume is being sent.");
+          setText("time", mmss(cappedElapsed));
+          return;
         }
+        const remaining=Math.max(0, max-rawElapsed);
         setCls(remaining <= 15 ? "warning" : "active");
-        setText("icon","🎧"); setText("label","Customer on hold"); setText("sub","Elapsed " + mmss(elapsed) + " / Max " + mmss(max) + " · Manual Resume required"); setText("time", mmss(remaining));
+        setText("icon","🎧");
+        setText("label","Customer on hold");
+        setText("sub","Elapsed " + mmss(cappedElapsed) + " / Max " + mmss(max) + " · Manual Resume required");
+        setText("time", mmss(cappedElapsed));
       }
       render();
       setInterval(render, 1000);
