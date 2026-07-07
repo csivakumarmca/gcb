@@ -1,23 +1,108 @@
-# GCB v1.7.2.2 - SendMsg Fast Patch
+# GCB v1.7.2.3 - Manual Hold Alert + Timer Widget
 
-This package is based on the confirmed working v1.7.2.1 baseline.
+This package is based on the confirmed working **v1.7.2.2 SendMsg Fast** baseline.
 
-## What changed
+## What is kept unchanged
 
-Only SendMsg behavior was optimized. Hold/Resume and Prospects were not redesigned.
+- SendMsg fast behavior is retained (`v5.2.2-fast`).
+- SendMsg uses Agent Script URL values directly.
+- SendMsg duplicate guard remains enabled.
+- Prospects page remains unchanged.
+- Full CommonParams must remain unchanged.
 
-- `js/send-message.js` build changed to `v5.2.2-fast`.
-- SendMsg now uses Agent Script URL values directly: `conversationId`, `agentCommunicationId`, `agentParticipantId`, `customerCommunicationId`, and `agentName`.
-- Removed upfront conversation resolver calls before sending.
-- Removed remote duplicate reservation checks before sending.
-- Keeps local browser duplicate lock/done key to prevent duplicate sends caused by multiple `sendmsg.html` loads.
-- Updates participant attributes after successful send.
-- Retries only when the actual POST send fails because the communication may not be ready.
-- Retry settings: 3 attempts, 1 second delay.
+## What changed in this package
 
-## Keep CommonParams
+### 1. Auto Resume is now configurable
 
-Use the old full CommonParams:
+New Hold URL parameter:
+
+```text
+&autoResumeEnabled=false
+```
+
+When `autoResumeEnabled=false`:
+
+- Hold sends `Gen-Hold-32`.
+- Timer starts and continues.
+- When `maxHoldTime` is reached, **no automatic `Gen-Resume-33` is sent**.
+- Agent-side alert/notification is shown.
+- Agent must manually click **Resume**.
+
+When `autoResumeEnabled=true`:
+
+- Old central/local auto-resume behavior can be enabled again.
+
+### 2. Agent-side alert when hold time is exceeded
+
+When max hold time is reached with manual resume mode:
+
+```text
+Maximum hold duration reached. Please click Resume to continue the chat.
+```
+
+The alert is shown as:
+
+- In-page persistent warning
+- Browser notification if permission is granted
+- Title blink / visual attention
+- Beep best-effort if browser allows audio
+
+### 3. New holdtimer.html page
+
+New file:
+
+```text
+holdtimer.html
+```
+
+Purpose:
+
+- Timer-only display widget for Summary / Product / Prospects or other script tabs.
+- No Hold/Resume button.
+- No summary cards/history.
+- Reads active hold state from localStorage.
+- Shows active hold timer and exceeded warning.
+
+Recommended URL:
+
+```javascript
+AFT_URL_HoldTimer =
+{{AFT_URL_GCB_RootURL}} +
+"holdtimer.html?" +
+"v=17223" +
+{{AFT_URL_GCB_CommonParams}} +
+"&maxHoldTime=30" +
+"&browserNotificationEnabled=true"
+```
+
+## Recommended Hold URL
+
+```javascript
+AFT_URL_HoldResume =
+{{AFT_URL_GCB_RootURL}} +
+"holdresume.html?" +
+"v=17223" +
+{{AFT_URL_GCB_CommonParams}} +
+"&holdMessageText=Gen-Hold-32" +
+"&resumeMessageText=Gen-Resume-33" +
+"&maxHoldAttempts=3" +
+"&maxHoldTime=30" +
+"&autoResumeEnabled=false" +
+"&isCustomerBasedHoldCalculation=false" +
+"&alertBlinkEnabled=true" +
+"&alertSoundEnabled=true" +
+"&alertBlinkDurationMs=15000" +
+"&titleBlinkDurationMs=30000" +
+"&alertSoundRepeatCount=1" +
+"&alertSoundDurationMs=600" +
+"&alertSoundGapMs=250" +
+"&browserNotificationEnabled=true" +
+"&taskbarBlinkEnabled=true" +
+"&requestNotificationPermissionOnHold=true" +
+"&notificationAutoCloseMs=12000"
+```
+
+## CommonParams - keep full old values
 
 ```javascript
 AFT_URL_GCB_CommonParams =
@@ -31,10 +116,19 @@ AFT_URL_GCB_CommonParams =
 "&source=AgentScript"
 ```
 
+## Files in this package
+
+- `index.html` - GCB central status page and central hold monitor. Auto-resume now respects `autoResumeEnabled`.
+- `sendmsg.html` - unchanged fast SendMsg page.
+- `holdresume.html` - main Hold/Resume control page with configurable auto-resume and manual alert.
+- `holdtimer.html` - new timer-only page for other tabs.
+- `prospects.html` - unchanged Prospects page.
+- `README.md` - this file.
+
 ## Cache version
 
-Use a new cache value such as `v=17222`.
+Use a fresh cache version:
 
-## Important
-
-This package does not change the central hold monitor design. It only reduces Send Greeting delay by sending first and retrying only on send failure.
+```text
+v=17223
+```

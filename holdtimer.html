@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GCB Hold Timer v1.7.2.3</title>
+  <style>
+    :root { --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b; --line:#cbd5e1; --bg:#f8fafc; }
+    * { box-sizing: border-box; }
+    body { margin:0; padding:6px; font-family: Arial, Helvetica, sans-serif; background:transparent; color:#0f172a; font-size:12px; }
+    .timer-widget { border:1px solid var(--line); border-radius:8px; background:#fff; min-height:54px; display:flex; align-items:center; gap:10px; padding:8px 10px; box-shadow:0 1px 2px rgba(15,23,42,.08); }
+    .timer-widget.idle { background:#f8fafc; }
+    .timer-widget.active { border-color:#38bdf8; background:#eff6ff; }
+    .timer-widget.warning { border-color:#f59e0b; background:#fffbeb; }
+    .timer-widget.exceeded { border-color:#ef4444; background:#fef2f2; animation:pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 0 3px rgba(239,68,68,.18)} }
+    .icon { font-size:18px; width:24px; text-align:center; }
+    .main { flex:1; min-width:0; }
+    .label { font-weight:bold; color:#0f172a; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .sub { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .time { font-size:22px; font-weight:bold; color:#0369a1; min-width:82px; text-align:right; font-variant-numeric:tabular-nums; }
+    .exceeded .time { color:var(--danger); }
+    .warning .time { color:var(--warn); }
+    .idle .time { color:var(--muted); }
+    .bar { height:5px; background:#e2e8f0; border-radius:999px; margin-top:5px; overflow:hidden; }
+    .fill { height:100%; width:0%; background:#0ea5e9; border-radius:999px; transition:width .25s linear; }
+    .warning .fill { background:#f59e0b; }
+    .exceeded .fill { background:#ef4444; width:100% !important; }
+  </style>
+</head>
+<body>
+  <div id="widget" class="timer-widget idle">
+    <div class="icon" id="icon">⏱️</div>
+    <div class="main">
+      <div class="label" id="label">No active hold</div>
+      <div class="sub" id="sub">Timer will appear when Hold is active.</div>
+      <div class="bar"><div id="fill" class="fill"></div></div>
+    </div>
+    <div class="time" id="time">00:00</div>
+  </div>
+
+  <script>
+    (function(){
+      "use strict";
+      const VERSION = "v1.7.2.3";
+      const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
+      const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+      const params = new URLSearchParams(window.location.search || "");
+      function p(name, def){ const v=params.get(name); return v===null || v==="" ? def : v; }
+      function n(name, def){ const v=Number(p(name, def)); return Number.isFinite(v) ? v : def; }
+      function sanitizeKey(value){ return String(value||"").replace(/[^a-zA-Z0-9_.:-]+/g,"_"); }
+      const CONFIG = {
+        conversationId:p("conversationId", ""),
+        communicationId:p("communicationId", p("agentCommunicationId", "")),
+        agentCommunicationId:p("agentCommunicationId", p("communicationId", "")),
+        customerCommunicationId:p("customerCommunicationId", ""),
+        maxHoldTime:n("maxHoldTime", 30),
+        browserNotificationEnabled:String(p("browserNotificationEnabled","true")).toLowerCase() !== "false"
+      };
+      function getCentralHoldKey(){
+        return sanitizeKey([CONFIG.conversationId || "NO_CONV", CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_AGENT_COMM", CONFIG.customerCommunicationId || "NO_CUSTOMER_COMM"].join("|"));
+      }
+      function readRecords(){
+        try { const raw=localStorage.getItem(GCB_ACTIVE_HOLDS_KEY); const obj=raw?JSON.parse(raw):{}; return obj && typeof obj==="object" && !Array.isArray(obj) ? obj : {}; } catch(e){ return {}; }
+      }
+      function findRecord(){
+        const records=readRecords();
+        const exact=records[getCentralHoldKey()];
+        if (exact) return exact;
+        const vals=Object.values(records);
+        return vals.find(r => r && r.conversationId === CONFIG.conversationId && ["HOLD","HOLD_EXCEEDED","RESUME_IN_PROGRESS"].includes(String(r.status||""))) || null;
+      }
+      function mmss(sec){ sec=Math.max(0, Math.floor(Number(sec)||0)); const m=String(Math.floor(sec/60)).padStart(2,"0"); const s=String(sec%60).padStart(2,"0"); return m+":"+s; }
+      function setCls(cls){ document.getElementById("widget").className="timer-widget "+cls; }
+      function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent=txt; }
+      function notifyOnce(record){
+        if (!CONFIG.browserNotificationEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
+        const key="GCB_HOLD_ALERT_SENT_" + sanitizeKey(record.key || getCentralHoldKey());
+        if (localStorage.getItem(key)) return;
+        try {
+          localStorage.setItem(key, new Date().toISOString());
+          const note = new Notification("SIVAKUMAR - RAKBANK", { body:"Maximum hold duration reached. Please click Resume to continue the chat.", tag:key, requireInteraction:false });
+          setTimeout(() => { try { note.close(); } catch(_){} }, 12000);
+        } catch(_) {}
+      }
+      function render(){
+        const record=findRecord();
+        const fill=document.getElementById("fill");
+        if (!record) {
+          setCls("idle"); setText("icon","⏱️"); setText("label","No active hold"); setText("sub","Timer will appear when Hold is active."); setText("time","00:00"); if(fill) fill.style.width="0%"; return;
+        }
+        const status=String(record.status || "");
+        const max=Number(record.maxHoldTime || CONFIG.maxHoldTime || 0) || 1;
+        const start=Number(record.holdStartTimeMs || 0);
+        const elapsed=start ? Math.max(0, Math.floor((Date.now()-start)/1000)) : 0;
+        const remaining=Math.max(0, max-elapsed);
+        const pct=Math.max(0, Math.min(100, (elapsed/max)*100));
+        if (fill) fill.style.width=pct+"%";
+        if (status === "HOLD_EXCEEDED" || elapsed >= max) {
+          setCls("exceeded"); setText("icon","⚠️"); setText("label","Maximum hold duration reached"); setText("sub","Please click Resume to continue the chat."); setText("time", mmss(elapsed)); notifyOnce(record); return;
+        }
+        if (status === "RESUME_IN_PROGRESS") {
+          setCls("warning"); setText("icon","⏳"); setText("label","Resume in progress"); setText("sub","Please wait while Resume is being sent."); setText("time", mmss(elapsed)); return;
+        }
+        setCls(remaining <= 15 ? "warning" : "active");
+        setText("icon","🎧"); setText("label","Customer on hold"); setText("sub","Elapsed " + mmss(elapsed) + " / Max " + mmss(max) + " · Manual Resume required"); setText("time", mmss(remaining));
+      }
+      render();
+      setInterval(render, 1000);
+      window.addEventListener("storage", e => { if (e && e.key === GCB_ACTIVE_HOLDS_KEY) render(); });
+      try { if (typeof BroadcastChannel !== "undefined") { const ch=new BroadcastChannel(GCB_HOLD_CHANNEL); ch.onmessage=render; } } catch(_) {}
+    })();
+  </script>
+</body>
+</html>

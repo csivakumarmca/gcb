@@ -58,7 +58,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2";
+      const ROUTER_VERSION = "v1.7.2.3";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -145,6 +145,22 @@
         return startedAt && (nowMs - startedAt) > (4 * 60 * 60 * 1000);
       }
 
+
+      function notifyHoldExceededOnce(record) {
+        try {
+          if (!("Notification" in window) || Notification.permission !== "granted") return;
+          const key = "GCB_HOLD_ALERT_SENT_" + C.safeString(record && record.key || "").replace(/[^a-zA-Z0-9_.:-]+/g, "_");
+          if (localStorage.getItem(key)) return;
+          localStorage.setItem(key, new Date().toISOString());
+          const n = new Notification("SIVAKUMAR - RAKBANK", {
+            body: "Maximum hold duration reached. Please click Resume to continue the chat.",
+            tag: key,
+            requireInteraction: false
+          });
+          setTimeout(function () { try { n.close(); } catch (_) {} }, 12000);
+        } catch (_) {}
+      }
+
       async function sendAutoResumeForRecord(record) {
         const token = Auth.getAccessToken();
         if (!token) throw new Error("OAuth token missing for central auto-resume.");
@@ -172,6 +188,21 @@
             }
 
             if (!isHoldDue(record, nowMs)) continue;
+
+            if (record.autoResumeEnabled === false || String(record.autoResumeEnabled).toLowerCase() === "false") {
+              record.status = "HOLD_EXCEEDED";
+              record.resumeSent = false;
+              record.holdExceededTimeUtc = new Date().toISOString();
+              record.reason = reason || "CENTRAL_MONITOR_MAX_HOLD_TIME_MANUAL_RESUME";
+              records[key] = record;
+              writeCentralHoldRecords(records);
+              broadcastCentralHoldEvent("HOLD_EXCEEDED", record);
+              notifyHoldExceededOnce(record);
+              if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "failed", "Maximum hold duration reached. Manual Resume required.");
+              debugLog("INFO", "CENTRAL_HOLD_EXCEEDED", "key=" + key + " | conversationId=" + C.safeString(record.conversationId));
+              changed = true;
+              continue;
+            }
 
             if (isHoldPageActivelyHandling(record, nowMs)) {
               debugLog("INFO", "CENTRAL_AUTO_RESUME_SKIP_ACTIVE_PAGE", "key=" + key + " | hold page is active; local hold page timer will handle auto-resume.");
@@ -221,7 +252,7 @@
       function startCentralHoldMonitor() {
         if (centralHoldMonitorStarted) return;
         centralHoldMonitorStarted = true;
-        debugLog("INFO", "CENTRAL_HOLD_MONITOR_START", "Local hold monitor active. No Genesys polling; sends Resume only when a local hold record becomes due.");
+        debugLog("INFO", "CENTRAL_HOLD_MONITOR_START", "Local hold monitor active. No Genesys polling; auto-resume is controlled by autoResumeEnabled.");
         processCentralHoldMonitor("STARTUP");
         setInterval(function () { processCentralHoldMonitor("INTERVAL"); }, 2000);
         window.addEventListener("storage", function (event) {

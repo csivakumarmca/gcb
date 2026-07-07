@@ -670,7 +670,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.1";
+    const HR_VERSION = "v1.7.2.3";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -773,6 +773,7 @@
       lines.push("resumeMessageText: " + (CONFIG.resumeMessageText || "[missing]"));
       lines.push("maxHoldAttempts: " + CONFIG.maxHoldAttempts);
       lines.push("maxHoldTime: " + CONFIG.maxHoldTime + " seconds");
+      lines.push("autoResumeEnabled: " + CONFIG.autoResumeEnabled);
       lines.push("holdDetailsApiUrl: " + (CONFIG.holdDetailsApiUrl || "[not configured]"));
       lines.push("currentAgentInteractionStartTime: " + (CONFIG.currentAgentInteractionStartTime || "[not passed]"));
       lines.push("isCustomerBasedHoldCalculation: " + CONFIG.isCustomerBasedHoldCalculation);
@@ -1101,6 +1102,7 @@
       resumeMessageText: decodeMessageText(getParam("resumeMessageText", getParam("autoResumeMessageText", getParam("messageTextResume", "Gen-Resume-33")))),
       maxHoldAttempts: Math.max(1, getNumberParam("maxHoldAttempts", 3)),
       maxHoldTime: getNumberParam("maxHoldTime", getNumberParam("holdTimerSeconds", 0)),
+      autoResumeEnabled: getBoolParam("autoResumeEnabled", false),
       holdDetailsApiUrl: getParam("holdDetailsApiUrl", getParam("calculateHoldDetailsUrl", "")),
       debug: getBoolParam("debug", false),
       visibleDebug: getBoolParam("pageDebug", false) || getBoolParam("showPageDebug", false),
@@ -1241,6 +1243,7 @@
         holdMessageText: CONFIG.holdMessageText,
         resumeMessageText: CONFIG.resumeMessageText,
         maxHoldTime: CONFIG.maxHoldTime,
+        autoResumeEnabled: CONFIG.autoResumeEnabled,
         holdStartTimeMs: nowMs,
         holdStartTimeUtc: new Date(nowMs).toISOString(),
         status: "HOLD",
@@ -1270,6 +1273,9 @@
       record.resumeSent = status === "RESUME_IN_PROGRESS" || status === "RESUMED_AUTO" || status === "RESUMED_MANUAL";
       if (status === "RESUME_IN_PROGRESS") {
         record.resumeAttemptTimeUtc = nowIso;
+      } else if (status === "HOLD_EXCEEDED") {
+        record.resumeSent = false;
+        record.holdExceededTimeUtc = nowIso;
       } else if (status === "HOLD") {
         record.resumeSent = false;
         delete record.resumeAttemptTimeUtc;
@@ -2146,7 +2152,11 @@
       setText("timerMaxText", mmss(totalSeconds));
 
       if (remaining <= 0) {
-        setText("timerIndicatorStatus", "Time reached. Auto resume is sending...");
+        if (CONFIG.autoResumeEnabled) {
+          setText("timerIndicatorStatus", "Time reached. Auto resume is sending...");
+        } else {
+          setText("timerIndicatorStatus", "Hold duration reached - manual Resume required");
+        }
         if (holdTimerInterval) {
           clearInterval(holdTimerInterval);
           holdTimerInterval = null;
@@ -2156,17 +2166,28 @@
       }
 
       if (remaining <= 15) {
-        setText("timerIndicatorStatus", "Critical: auto resume soon");
+        setText("timerIndicatorStatus", CONFIG.autoResumeEnabled ? "Critical: auto resume soon" : "Critical: manual resume required soon");
       } else if (remaining <= 60) {
         setText("timerIndicatorStatus", "Warning: less than 1 minute");
       } else {
-        setText("timerIndicatorStatus", "Hold active - auto resume at 00:00");
+        setText("timerIndicatorStatus", CONFIG.autoResumeEnabled ? "Hold active - auto resume at 00:00" : "Hold active - manual Resume required at 00:00");
       }
     }
 
     async function autoResumeOnTimeout() {
       if (!isOnHold || (activeTimer && activeTimer.autoResumeSent)) return;
       if (activeTimer) activeTimer.autoResumeSent = true;
+
+      if (!CONFIG.autoResumeEnabled) {
+        const durationMessage = "Maximum hold duration reached. Please click Resume to continue the chat.";
+        updateCentralHoldRecordStatus("HOLD_EXCEEDED", "LOCAL_TIMER_MAX_HOLD_TIME");
+        startAttentionAlert(durationMessage, "warning", "SIVAKUMAR - RAKBANK");
+        setStatus(durationMessage, "warning");
+        addDebug("HOLD_DURATION_REACHED_MANUAL_RESUME", "maxHoldTime=" + CONFIG.maxHoldTime);
+        updateButtonState();
+        return;
+      }
+
       showPersistentAlert("Maximum hold duration reached (" + CONFIG.maxHoldTime + " seconds). Auto resume is being sent...", "warning");
       setStatus("Maximum hold duration reached. Auto resume is being sent...", "warning");
       addDebug("AUTO_RESUME_START", "maxHoldTime=" + CONFIG.maxHoldTime);
