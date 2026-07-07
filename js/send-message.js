@@ -6,14 +6,14 @@
   const Auth = global.RakAuth;
   const Api = global.GenesysApi;
 
-  const VERSION = "v5.2.1-retry";
+  const VERSION = "v5.2.2-fast";
   const LOCAL_REQUEST_DONE_PREFIX = "Bank_GCB_GREETING_DONE_";
   const LOCAL_REQUEST_LOCK_PREFIX = "Bank_GCB_GREETING_LOCK_";
   const REQUEST_LOCK_TTL_MS = 15000;
-  const GREETING_START_DELAY_MS = 1200;
-  const CONTEXT_RETRY_COUNT = 5;
-  const CONTEXT_RETRY_DELAY_MS = 2000;
-  const JOINED_TO_GREETING_DELAY_MS = 600;
+  const GREETING_START_DELAY_MS = 0;
+  const CONTEXT_RETRY_COUNT = 3;
+  const CONTEXT_RETRY_DELAY_MS = 1000;
+  const JOINED_TO_GREETING_DELAY_MS = 250;
   const RESERVATION_RECHECK_DELAY_MS = 250;
   const RESERVATION_STALE_MS = 30000;
 
@@ -334,43 +334,11 @@
   }
 
   async function reserveGreeting(token, context, greetingKey) {
-    const owner = C.sanitizeKey(greetingKey + "-" + Date.now() + "-" + Math.random().toString(16).slice(2));
-    const attrs = await readParticipantAttributes(token, context.conversationId, context.agentParticipantId);
-    const existingKeys = C.safeString(attrs[GREETING_SENT_KEYS_ATTRIBUTE]);
-
-    if (keyExists(existingKeys, greetingKey)) {
-      return { allow: false, reason: "ALREADY_SENT", owner };
-    }
-
-    const lockKey = C.safeString(attrs[GREETING_LOCK_KEY_ATTRIBUTE]);
-    const lockTime = parseNumber(attrs[GREETING_LOCK_TIME_ATTRIBUTE]);
-    const lockAgeMs = lockTime ? Date.now() - lockTime : 999999;
-
-    if (lockKey === greetingKey && lockAgeMs < RESERVATION_STALE_MS) {
-      return { allow: false, reason: "ACTIVE_REMOTE_LOCK", owner };
-    }
-
-    await Api.setParticipantAttributes(token, context.conversationId, context.agentParticipantId, {
-      [GREETING_LOCK_KEY_ATTRIBUTE]: greetingKey,
-      [GREETING_LOCK_OWNER_ATTRIBUTE]: owner,
-      [GREETING_LOCK_TIME_ATTRIBUTE]: String(Date.now()),
-      [GREETING_LAST_KEY_ATTRIBUTE]: greetingKey,
-      [GREETING_LAST_STATUS_ATTRIBUTE]: "RESERVED",
-      [GREETING_LAST_TIME_ATTRIBUTE]: new Date().toISOString()
-    });
-
-    await C.sleep(RESERVATION_RECHECK_DELAY_MS);
-    const recheck = await readParticipantAttributes(token, context.conversationId, context.agentParticipantId);
-
-    if (keyExists(C.safeString(recheck[GREETING_SENT_KEYS_ATTRIBUTE]), greetingKey)) {
-      return { allow: false, reason: "ALREADY_SENT_AFTER_RESERVE", owner };
-    }
-
-    if (C.safeString(recheck[GREETING_LOCK_KEY_ATTRIBUTE]) !== greetingKey || C.safeString(recheck[GREETING_LOCK_OWNER_ATTRIBUTE]) !== owner) {
-      return { allow: false, reason: "REMOTE_LOCK_LOST", owner };
-    }
-
-    return { allow: true, reason: "RESERVED", owner, existingKeys };
+    // Fast mode: do not call conversation/read attributes before sending.
+    // Duplicate protection is handled by local browser lock/done key immediately.
+    // Remote participant attributes are updated after successful send.
+    addDebug("FAST_RESERVE", "Remote pre-check skipped. Local lock is active. key=" + greetingKey);
+    return { allow: true, reason: "FAST_LOCAL_LOCK", owner: "LOCAL_FAST", existingKeys: "" };
   }
 
   async function markGreetingSent(token, context, greetingKey, existingKeys) {
@@ -421,53 +389,56 @@
   }
 
   async function resolveContext(token) {
+    // Fast mode: use the values already passed by Genesys Agent Script.
+    // No upfront GET conversation/users API is required to resolve communication.
+    const context = {
+      conversationId: request.conversationId,
+      customerCommunicationId: request.customerCommunicationId,
+      agentCommunicationId: request.agentCommunicationId,
+      agentParticipantId: request.participantId,
+      sendCommunicationId: request.agentCommunicationId || request.communicationId
+    };
+    addDebug("COMM_URL_CONTEXT", "sendComm=" + (context.sendCommunicationId || "") + " | agentParticipant=" + (context.agentParticipantId || "") + " | customerComm=" + (context.customerCommunicationId || ""));
+    if (!isUsableContext(context)) {
+      throw new Error("Required SendMsg URL values are missing. Pass conversationId, agentCommunicationId, agentParticipantId/participantId, and customerCommunicationId from Agent Script.");
+    }
+    return context;
+  }
+
+  function shouldRetrySendError(error) {
+    const text = C.safeString((error && error.message) || String(error)).toLowerCase();
+    return text.includes("connected") || text.includes("owner") || text.includes("communication") || text.includes("not found") || text.includes("400") || text.includes("409");
+  }
+
+  async function sendMessageWithRetry(token, context, text, label) {
     let lastError = null;
     for (let attempt = 1; attempt <= CONTEXT_RETRY_COUNT; attempt++) {
       try {
-        const resolved = await Api.resolveCommunicationContext(token, request.conversationId, {
-          customerCommunicationId: request.customerCommunicationId,
-          agentCommunicationId: request.agentCommunicationId,
-          participantId: request.participantId,
-          agentParticipantId: request.participantId
-        });
-
-        const context = {
-          conversationId: request.conversationId,
-          customerCommunicationId: resolved.customerCommunicationId || request.customerCommunicationId,
-          agentCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId,
-          agentParticipantId: resolved.agentParticipantId || request.participantId,
-          // Outbound messages must be sent on the agent/non-external communication.
-          // customerCommunicationId is kept only for duplicate-key/session identification.
-          sendCommunicationId: resolved.agentCommunicationId || request.agentCommunicationId
-        };
-
-        addDebug("COMM_RESOLVE_ATTEMPT", "attempt=" + attempt + " | sendComm=" + (context.sendCommunicationId || "") + " | agentParticipant=" + (context.agentParticipantId || ""));
-        if (isUsableContext(context)) return context;
+        addDebug("SEND_REQUEST", label + " | attempt=" + attempt + " | comm=" + context.sendCommunicationId);
+        const result = await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, text);
+        return result;
       } catch (error) {
         lastError = error;
-        addDebug("COMM_RESOLVE_RETRY", "attempt=" + attempt + " failed: " + (error && error.message ? error.message : String(error)));
-      }
-
-      if (attempt < CONTEXT_RETRY_COUNT) {
-        setStatus("Waiting for agent communication to become ready... retry " + attempt + "/" + CONTEXT_RETRY_COUNT, "info");
+        const message = error && error.message ? error.message : String(error);
+        addDebug("SEND_RETRY", label + " | attempt=" + attempt + " failed: " + message);
+        if (attempt >= CONTEXT_RETRY_COUNT || !shouldRetrySendError(error)) break;
+        setStatus("Send " + label + " failed because communication may not be ready. Retrying " + attempt + "/" + CONTEXT_RETRY_COUNT + "...", "info");
         await C.sleep(CONTEXT_RETRY_DELAY_MS);
       }
     }
-
-    if (lastError) throw lastError;
-    throw new Error("Agent communication could not be resolved after retry. Check Agent Script communicationId/agentCommunicationId values.");
+    throw lastError || new Error("Send " + label + " failed.");
   }
 
   async function sendGreetingSequence(token, context, joinedText, greetingText) {
     if (!joinedText) throw new Error("Joined message text is mandatory but empty.");
 
-    await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, joinedText);
+    await sendMessageWithRetry(token, context, joinedText, "JOINED");
     addDebug("SEND_JOINED_OK", "Mandatory joined message sent.");
     centralStatus("sendGreeting", "success", "Mandatory joined message sent.");
 
     if (greetingText) {
       await C.sleep(JOINED_TO_GREETING_DELAY_MS);
-      await Api.sendMessage(token, context.conversationId, context.sendCommunicationId, greetingText);
+      await sendMessageWithRetry(token, context, greetingText, "GREETING");
       addDebug("SEND_GREETING_OK", "Optional greeting message sent.");
       centralStatus("sendGreeting", "success", "Joined and greeting message sent.");
     } else {
