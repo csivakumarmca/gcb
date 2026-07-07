@@ -318,6 +318,38 @@
 
 
 
+
+
+    .recent-segments-card {
+      justify-content: center;
+      padding: 12px 14px;
+    }
+
+    .recent-segments-card .metric-icon {
+      margin-bottom: 6px;
+    }
+
+    .recent-segments-value {
+      width: 100%;
+      min-height: 42px;
+      max-height: 92px;
+      overflow-y: auto;
+      color: var(--rak-blue-2);
+      font-size: 18px;
+      line-height: 1.35;
+      font-weight: 700;
+      text-align: center;
+      word-break: break-word;
+      padding: 2px 4px;
+    }
+
+    .recent-segments-value.empty {
+      color: #5d6c7a;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
     .timer-indicator-card {
       position: relative;
       padding: 12px 14px;
@@ -607,18 +639,11 @@
           <div id="timerSubText" class="metric-sub">Current session total</div>
         </div>
 
-        <div id="timerIndicatorCard" class="metric-card timer-indicator-card">
-          <div class="timer-indicator-title">Hold Timer Indicator</div>
-          <div id="timerRemainingValue" class="timer-indicator-value">00:00</div>
-          <div id="timerIndicatorStatus" class="timer-indicator-status">Timer not active</div>
-          <div class="timer-progress-wrap">
-            <div id="timerProgressFill" class="timer-progress-fill"></div>
-          </div>
-          <div class="timer-indicator-meta">
-            <span>Elapsed: <b id="timerElapsedText">00:00</b></span>
-            <span>Max: <b id="timerMaxText">00:00</b></span>
-          </div>
-          <div id="currentSegments" class="segments-box" style="display:none;">Current session</div>
+        <div id="recentSegmentsCard" class="metric-card recent-segments-card">
+          <div class="metric-icon">⌛</div>
+          <div class="metric-label">Recent Hold Segments</div>
+          <div id="currentSegments" class="recent-segments-value">No completed hold segments yet.</div>
+          <div class="metric-sub">Current session</div>
         </div>
       </div>
     </div>
@@ -671,14 +696,14 @@
   <script src="./js/gcb-debug.js"></script>
   <script>
     /************************************************************
-     * HOLD RESUME PAGE - v1.7.2.11
+     * HOLD RESUME PAGE - v1.7.2.16
      * Uses existing Genesys client-side send-message approach.
      * v1.7.2.9 release note:
      * - Browser notification/taskbar attention kept as optional best-effort alert.
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.15";
+    const HR_VERSION = "v1.7.2.16";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1466,6 +1491,23 @@
       if (el) el.textContent = safeString(value);
     }
 
+    function getLatestSegmentsText(currentSegments, holdHistory) {
+      const raw = safeString(currentSegments || holdHistory || "").trim();
+      if (!raw || raw === "Current session") return "No completed hold segments yet.";
+      const list = raw.split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+      if (!list.length) return "No completed hold segments yet.";
+      return list.slice(-3).join(", ");
+    }
+
+    function renderRecentSegments(data) {
+      const el = document.getElementById("currentSegments");
+      if (!el) return;
+      const text = getLatestSegmentsText(data && data.currentSegments, data && data.holdHistory);
+      el.textContent = text;
+      if (text === "No completed hold segments yet.") el.classList.add("empty");
+      else el.classList.remove("empty");
+    }
+
     function applySummary(summary) {
       const data = syncAttemptStateFromSummary(normalizeSummary(summary || {}));
       latestSummary = data;
@@ -1476,7 +1518,7 @@
       setText("maxHoldAttemptsSub", CONFIG.maxHoldAttempts);
       resetTimerIndicator("Timer not active");
       setText("currentHoldTime", data.currentHoldTime);
-      setText("currentSegments", data.currentSegments || "Current session");
+      renderRecentSegments(data);
       setText("totalHoldCount", data.totalHoldCount);
       setText("totalHoldTime", data.totalHoldTime);
       setText("averageHoldTime", data.averageHoldTime);
