@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.7.2.9</title>
+  <title>Agent Hold Summary v1.7.2.12</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -20,19 +20,26 @@
 
     * { box-sizing: border-box; }
 
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
+      min-height: 0;
+      background: transparent;
+    }
+
+    body {
       padding: 8px;
       font-family: Arial, Helvetica, sans-serif;
-      background: var(--rak-page);
       color: var(--rak-text);
       font-size: 12px;
+      overflow-x: hidden;
     }
 
     .page {
       width: 100%;
       max-width: 1040px;
       margin: 0 auto;
+      background: transparent;
     }
 
     .topbar {
@@ -404,7 +411,7 @@
       gap: 12px;
       align-items: center;
       min-height: 88px;
-      margin-bottom: 8px;
+      margin-bottom: 0;
     }
 
     .history-icon {
@@ -440,6 +447,7 @@
     }
 
     .note {
+      display: none;
       color: #263d55;
       font-size: 12px;
       margin: 2px 0 0 4px;
@@ -670,7 +678,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.11";
+    const HR_VERSION = "v1.7.2.13";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1479,6 +1487,76 @@
       updateButtonState();
     }
 
+    function parseHHMMSSToSeconds(value) {
+      const text = safeString(value).trim();
+      if (!text) return 0;
+      const parts = text.split(":").map(function (p) { return Number(p); });
+      if (parts.some(function (n) { return !Number.isFinite(n); })) return 0;
+      if (parts.length === 3) return Math.max(0, Math.floor((parts[0] * 3600) + (parts[1] * 60) + parts[2]));
+      if (parts.length === 2) return Math.max(0, Math.floor((parts[0] * 60) + parts[1]));
+      if (parts.length === 1) return Math.max(0, Math.floor(parts[0]));
+      return 0;
+    }
+
+    function mergeSegmentList(existing, segment) {
+      const values = safeString(existing)
+        .split(",")
+        .map(function (v) { return safeString(v).trim(); })
+        .filter(Boolean);
+      if (segment && values[values.length - 1] !== segment) values.push(segment);
+      return values.join(", ");
+    }
+
+    function getActiveHoldElapsedSecondsBeforeStop() {
+      if (activeTimer && activeTimer.startedAt) {
+        return Math.max(0, Math.floor((Date.now() - Number(activeTimer.startedAt)) / 1000));
+      }
+      try {
+        const raw = localStorage.getItem(getTimerStateKey());
+        const timer = raw ? JSON.parse(raw) : null;
+        if (timer && timer.startedAt) {
+          return Math.max(0, Math.floor((Date.now() - Number(timer.startedAt)) / 1000));
+        }
+      } catch (_) {}
+      return 0;
+    }
+
+    function applyLocalHoldStartedSummary(startedCount) {
+      const base = normalizeSummary(latestSummary || loadCachedSummary() || buildInitialSummaryFromParams());
+      base.currentHoldCount = Math.max(parseCount(base.currentHoldCount), parseCount(startedCount), getAttemptStartedCount());
+      base.currentHoldTime = base.currentHoldTime || "00:00:00";
+      applySummary(base);
+      addDebug("LOCAL_HOLD_SUMMARY_APPLIED", "currentHoldCount=" + base.currentHoldCount);
+    }
+
+    function applyLocalResumeCompletedSummary(elapsedSeconds) {
+      const base = normalizeSummary(latestSummary || loadCachedSummary() || buildInitialSummaryFromParams());
+      const attemptCount = Math.max(getAttemptStartedCount(), parseCount(base.currentHoldCount));
+      const segmentSeconds = Math.max(0, Math.floor(Number(elapsedSeconds || 0)));
+      const segment = hhmmss(segmentSeconds);
+
+      const existingCurrentSeconds = parseHHMMSSToSeconds(base.currentHoldTime);
+      const existingTotalSeconds = parseHHMMSSToSeconds(base.totalHoldTime);
+      const currentSeconds = existingCurrentSeconds + segmentSeconds;
+      const totalSeconds = existingTotalSeconds + segmentSeconds;
+      const totalCount = Math.max(parseCount(base.totalHoldCount) + (segmentSeconds > 0 ? 1 : 0), attemptCount);
+      const averageSeconds = totalCount > 0 ? Math.floor(totalSeconds / totalCount) : 0;
+      const longestSeconds = Math.max(parseHHMMSSToSeconds(base.longestHoldTime), segmentSeconds);
+
+      base.currentHoldCount = attemptCount;
+      base.currentHoldTime = hhmmss(currentSeconds);
+      base.currentSegments = mergeSegmentList(base.currentSegments, segmentSeconds > 0 ? segment : "");
+      base.totalHoldCount = totalCount;
+      base.totalHoldTime = hhmmss(totalSeconds);
+      base.holdHistory = mergeSegmentList(base.holdHistory, segmentSeconds > 0 ? segment : "");
+      base.averageHoldTime = hhmmss(averageSeconds);
+      base.longestHoldTime = hhmmss(longestSeconds);
+
+      applySummary(base);
+      addDebug("LOCAL_RESUME_SUMMARY_APPLIED", "elapsed=" + segment + " | current=" + base.currentHoldCount + " | total=" + base.totalHoldCount);
+    }
+
+
     function normalizeSummary(raw) {
       return {
         currentHoldCount: parseCount(raw.CurrentSession_Hold_TotalCount || raw.currentHoldCount || raw.CurrentSession_Hold_Count || 0),
@@ -2239,11 +2317,12 @@
 
     async function refreshHoldSummaryAfterAction(action) {
       const expectedCount = getAttemptStartedCount();
-      const maxTries = 4;
+      const localBeforeRefresh = normalizeSummary(latestSummary || loadCachedSummary() || buildInitialSummaryFromParams());
+      const maxTries = action === "RESUME" ? 6 : 4;
       let lastError = null;
 
       for (let attempt = 1; attempt <= maxTries; attempt++) {
-        await sleep(attempt === 1 ? CONFIG.autoRefreshDelayMs : 1200);
+        await sleep(attempt === 1 ? CONFIG.autoRefreshDelayMs : 1500);
         try {
           await refreshHoldSummary(false);
           lastError = null;
@@ -2255,20 +2334,23 @@
         const visibleCount = getCurrentSessionCount();
         addDebug("SUMMARY_RETRY_CHECK", "action=" + action + " | attempt=" + attempt + " | visibleCount=" + visibleCount + " | expectedCount=" + expectedCount);
 
-        if (action === "HOLD") {
-          // The Hold segment is active and may not appear in completed transcript counts yet.
-          // The local started-count/timer is already displayed, so one successful refresh is enough.
-          if (!lastError) return;
-        } else if (visibleCount >= expectedCount) {
-          return;
+        if (!lastError && visibleCount >= expectedCount) return;
+
+        // Genesys transcript can be delayed immediately after POST. Do not replace a good local summary with zero/stale values.
+        if (!lastError && visibleCount < expectedCount) {
+          applySummary(localBeforeRefresh);
         }
       }
 
       if (lastError) {
+        applySummary(localBeforeRefresh);
         setStatus("Message sent, but latest hold details could not be refreshed yet. Cached/local values are shown.", "warning");
         addDebug("SUMMARY_AFTER_ACTION_DEFERRED", lastError.message || String(lastError));
         return;
       }
+
+      applySummary(localBeforeRefresh);
+      addDebug("SUMMARY_AFTER_ACTION_STALE_KEEP_LOCAL", "action=" + action + " | expectedCount=" + expectedCount);
     }
 
     /************************************************************
@@ -2359,18 +2441,20 @@
         if (result && result.redirected) return { redirected: true };
 
         if (action === "HOLD") {
-          markHoldAttemptStarted();
-          applySummary(latestSummary || buildInitialSummaryFromParams());
+          const startedCount = markHoldAttemptStarted();
+          applyLocalHoldStartedSummary(startedCount);
           isOnHold = true;
           persistButtonState();
           startMaxHoldTimer();
           saveCentralHoldRecord();
           setStatus(triggerSource === "EXTERNAL" ? "Hold message sent from Agent Script. Timer started." : "Hold message sent. Timer started.", "success");
         } else {
+          const resumeElapsedSeconds = getActiveHoldElapsedSecondsBeforeStop();
           isOnHold = false;
           persistButtonState();
           stopMaxHoldTimer(true);
           updateCentralHoldRecordStatus("RESUMED_MANUAL", triggerSource === "EXTERNAL" ? "EXTERNAL_RESUME" : "MANUAL_RESUME_CLICK");
+          applyLocalResumeCompletedSummary(resumeElapsedSeconds);
           setStatus(triggerSource === "EXTERNAL" ? "Resume message sent from Agent Script. Timer stopped." : "Resume message sent. Timer stopped.", "success");
         }
 
