@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.18</title>
+  <title>GCB Hold Timer v1.7.2.19</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -94,9 +94,11 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.18";
+      const VERSION = "v1.7.2.19";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+      const ORIGINAL_TITLE = document.title;
+      let titleBlinkInterval = null;
       const params = new URLSearchParams(window.location.search || "");
       function p(name, def){ const v=params.get(name); return v===null || v==="" ? def : v; }
       function n(name, def){ const v=Number(p(name, def)); return Number.isFinite(v) ? v : def; }
@@ -109,6 +111,9 @@
         customerCommunicationId:p("customerCommunicationId", ""),
         maxHoldTime:n("maxHoldTime", 30),
         browserNotificationEnabled:b("browserNotificationEnabled", true),
+        alertSoundEnabled:b("alertSoundEnabled", true),
+        taskbarBlinkEnabled:b("taskbarBlinkEnabled", true),
+        titleBlinkDurationMs:Math.max(3000, n("titleBlinkDurationMs", 30000)),
         compact:b("compact", false),
         mode:String(p("mode", "")).toLowerCase()
       };
@@ -129,7 +134,7 @@
         const records=readRecords();
         const exact=records[getCentralHoldKey()];
 
-        // IMPORTANT FIX v1.7.2.18:
+        // IMPORTANT FIX v1.7.2.19:
         // The exact central record may remain in localStorage after Resume as RESUMED_MANUAL.
         // Do not display completed Resume records as active hold, otherwise the timer stays
         // on "Time limit reached" after Resume.
@@ -142,12 +147,53 @@
       function setCls(cls){ document.getElementById("widget").className="timer-widget "+cls; }
       function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent=txt; }
       function setProgress(pct){ const fill=document.getElementById("fill"); if(fill) fill.style.width=Math.max(0, Math.min(100, pct || 0)) + "%"; }
+      function playBeepOnce(){
+        if (!CONFIG.alertSoundEnabled) return;
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) return;
+          const ctx = new AudioContextClass();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          gain.gain.setValueAtTime(0.001, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.6);
+          setTimeout(() => { try { ctx.close(); } catch(_){} }, 900);
+        } catch(_) {}
+      }
+      function blinkTitleOnce(){
+        if (!CONFIG.taskbarBlinkEnabled) return;
+        try {
+          if (titleBlinkInterval) return;
+          let show = true;
+          document.title = "⚠️ Hold Time Reached";
+          titleBlinkInterval = setInterval(() => {
+            show = !show;
+            document.title = show ? "⚠️ Hold Time Reached" : ORIGINAL_TITLE;
+          }, 900);
+          setTimeout(() => {
+            if (titleBlinkInterval) {
+              clearInterval(titleBlinkInterval);
+              titleBlinkInterval = null;
+            }
+            document.title = ORIGINAL_TITLE;
+          }, CONFIG.titleBlinkDurationMs);
+        } catch(_) {}
+      }
       function notifyOnce(record){
-        if (!CONFIG.browserNotificationEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
         const key="GCB_HOLD_ALERT_SENT_" + sanitizeKey(record.key || getCentralHoldKey());
         if (localStorage.getItem(key)) return;
+        try { localStorage.setItem(key, new Date().toISOString()); } catch(_) {}
+        playBeepOnce();
+        blinkTitleOnce();
+        if (!CONFIG.browserNotificationEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
         try {
-          localStorage.setItem(key, new Date().toISOString());
           const note = new Notification("SIVAKUMAR - RAKBANK", { body:"Maximum hold duration reached. Please click Resume to continue the chat.", tag:key, requireInteraction:false });
           setTimeout(() => { try { note.close(); } catch(_){} }, 12000);
         } catch(_) {}
@@ -167,8 +213,9 @@
         const max=Math.max(1, Number(record.maxHoldTime || CONFIG.maxHoldTime || 30));
         const start=Number(record.holdStartTimeMs || 0);
         const rawElapsed=start ? Math.max(0, Math.floor((Date.now()-start)/1000)) : 0;
-        const cappedElapsed=Math.min(rawElapsed, max);   // IMPORTANT: freezes visible timer at maxHoldTime.
-        const pct=(cappedElapsed/max)*100;
+        const remaining=Math.max(0, max-rawElapsed);
+        const cappedRemaining=Math.max(0, Math.min(max, remaining));
+        const pct=(cappedRemaining/max)*100;
         setProgress(pct);
 
         if (status === "HOLD_EXCEEDED" || rawElapsed >= max) {
@@ -176,7 +223,7 @@
           setText("icon","⚠️");
           setText("label","Time limit reached");
           setText("sub","Please click Resume to continue the chat.");
-          setText("time", mmss(max));                 // IMPORTANT: do not keep counting after limit.
+          setText("time", mmss(0));                 // countdown reaches zero and stays there.
           notifyOnce(record);
           return;
         }
@@ -185,15 +232,14 @@
           setText("icon","⏳");
           setText("label","Resume in progress");
           setText("sub","Please wait while Resume is being sent.");
-          setText("time", mmss(cappedElapsed));
+          setText("time", mmss(cappedRemaining));
           return;
         }
-        const remaining=Math.max(0, max-rawElapsed);
         setCls(remaining <= 15 ? "warning" : "active");
         setText("icon","🎧");
         setText("label","Customer on hold");
-        setText("sub","Elapsed " + mmss(cappedElapsed) + " / Max " + mmss(max) + " · Manual Resume required");
-        setText("time", mmss(cappedElapsed));
+        setText("sub","Remaining " + mmss(cappedRemaining) + " / Max " + mmss(max) + " · Manual Resume required");
+        setText("time", mmss(cappedRemaining));
       }
       render();
       setInterval(render, 1000);

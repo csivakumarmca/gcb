@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.7.2.18</title>
+  <title>Agent Hold Summary v1.7.2.19</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -696,14 +696,14 @@
   <script src="./js/gcb-debug.js"></script>
   <script>
     /************************************************************
-     * HOLD RESUME PAGE - v1.7.2.18
+     * HOLD RESUME PAGE - v1.7.2.19
      * Uses existing Genesys client-side send-message approach.
      * v1.7.2.9 release note:
      * - Browser notification/taskbar attention kept as optional best-effort alert.
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.18";
+    const HR_VERSION = "v1.7.2.19";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -2333,9 +2333,15 @@
         holdTimerInterval = null;
       }
       activeTimer = null;
+      stopAttentionAlert();
       document.getElementById("holdTimeCard").classList.remove("timer-active");
       setText("timerSubText", "Current session total");
       resetTimerIndicator("Timer not active");
+      // If the page was blinking because maxHoldTime was reached, clear that duration alert
+      // once Resume is clicked/sent. Count-limit alerts are recalculated separately.
+      if (persistentLimitAlert && persistentLimitAlert.type === "warning") {
+        clearPersistentAlert();
+      }
       if (clearStorage !== false) {
         try { localStorage.removeItem(getTimerStateKey()); } catch (_) {}
       }

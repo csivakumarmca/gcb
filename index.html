@@ -58,12 +58,14 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.3";
+      const ROUTER_VERSION = "v1.7.2.19";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+      const INDEX_PARAMS = new URLSearchParams(window.location.search || "");
+      const CURRENT_CONVERSATION_ID = C.safeString(INDEX_PARAMS.get("conversationId") || INDEX_PARAMS.get("gcConversationId") || "");
       let centralHoldMonitorStarted = false;
       let centralHoldMonitorBusy = false;
 
@@ -181,6 +183,14 @@
 
           for (const key of keys) {
             const record = records[key];
+
+            // v1.7.2.19: this index page belongs to one Genesys conversation.
+            // Do not show or process old hold records from another chat, otherwise a new chat
+            // can incorrectly display "Maximum hold duration reached" from a previous interaction.
+            if (CURRENT_CONVERSATION_ID && C.safeString(record && record.conversationId) !== CURRENT_CONVERSATION_ID) {
+              continue;
+            }
+
             if (isStaleHoldRecord(record, nowMs)) {
               delete records[key];
               changed = true;
@@ -401,6 +411,7 @@
         }
 
         renderMeta(user);
+        if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "pending", "Waiting for Hold/Resume action.");
         renderStatusLines();
         startCentralHoldMonitor();
         const moduleName = getModuleName();
