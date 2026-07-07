@@ -1,102 +1,19 @@
-# GCB v1.7.2.8 - HoldResume External Action Patch
+# GCB Generic v1.7.2.10 - HoldResume External Action Details Refresh + No Buttons
 
-Baseline: v1.7.2.7 HoldTimer compact width 200.
+Changed file: `holdresume.html`
 
-## What changed
+Changes:
+- Removed visible Hold and Refresh buttons from Hold Info page.
+- Agent Script should trigger Hold/Resume using `externalAction=HOLD` or `externalAction=RESUME`.
+- Hold Info page continues to show the full summary/details screen.
+- Fixed details not refreshing when an OAuth token exists but `clientId` is not passed in the HoldResume URL.
+- After Hold/Resume action, the page retries refreshing details and falls back to cached/local values instead of blocking the screen.
+- Existing max hold attempts validation remains in `holdresume.html`.
 
-Only `holdresume.html` was changed.
+Recommended cache version: `v=17229`
 
-New parameters:
 
-- `displayActionButton=false`
-  - Hides the internal Hold/Resume button inside `holdresume.html`.
-  - The page still displays all existing Hold Info details, summary, timer, history, alerts, and validation.
-
-- `externalAction=HOLD|RESUME|NONE`
-  - Allows the Agent Script page button to trigger Hold or Resume action through the same `holdresume.html` page.
-  - `externalAction=NONE` keeps the page as display/details only.
-
-- `requestId=<unique id>`
-  - Used as a duplicate guard for external actions.
-  - If the same external action URL is loaded more than once, the action is not repeated for the same requestId.
-
-## Behavior
-
-- `externalAction=HOLD`
-  - Validates max hold attempts first.
-  - If limit is reached, Gen-Hold-32 is not sent.
-  - If allowed, sends Gen-Hold-32, starts timer, saves local hold record, and updates summary.
-
-- `externalAction=RESUME`
-  - Sends Gen-Resume-33, stops timer, updates local hold record, and refreshes summary.
-
-- Resume remains allowed even if maximum hold count has already been reached.
-- Auto-resume is still controlled by `autoResumeEnabled`; business current setting should be `autoResumeEnabled=false`.
-- SendMsg and Prospects are unchanged.
-
-## Recommended URLs
-
-Hold Info page only:
-
-```javascript
-AFT_URL_HoldResume =
-{{AFT_URL_GCB_RootURL}} +
-"holdresume.html?" +
-"v=17228" +
-{{AFT_URL_GCB_CommonParams}} +
-"&holdMessageText=Gen-Hold-32" +
-"&resumeMessageText=Gen-Resume-33" +
-"&maxHoldAttempts=3" +
-"&maxHoldTime=30" +
-"&autoResumeEnabled=false" +
-"&displayActionButton=false" +
-"&externalAction=NONE" +
-"&isCustomerBasedHoldCalculation=false" +
-"&alertBlinkEnabled=true" +
-"&alertSoundEnabled=true" +
-"&alertBlinkDurationMs=15000" +
-"&titleBlinkDurationMs=30000" +
-"&alertSoundRepeatCount=1" +
-"&alertSoundDurationMs=600" +
-"&alertSoundGapMs=250" +
-"&browserNotificationEnabled=true" +
-"&taskbarBlinkEnabled=true" +
-"&requestNotificationPermissionOnHold=true" +
-"&notificationAutoCloseMs=12000"
-```
-
-Agent Script Hold action:
-
-```javascript
-AFT_URL_HoldResume_Action =
-{{AFT_URL_GCB_RootURL}} +
-"holdresume.html?" +
-"v=17228" +
-{{AFT_URL_GCB_CommonParams}} +
-"&holdMessageText=Gen-Hold-32" +
-"&resumeMessageText=Gen-Resume-33" +
-"&maxHoldAttempts=3" +
-"&maxHoldTime=30" +
-"&autoResumeEnabled=false" +
-"&displayActionButton=false" +
-"&externalAction=HOLD" +
-"&requestId=" + {{Scripter.Interaction ID}} + "-HOLD-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
-```
-
-Agent Script Resume action:
-
-```javascript
-AFT_URL_HoldResume_Action =
-{{AFT_URL_GCB_RootURL}} +
-"holdresume.html?" +
-"v=17228" +
-{{AFT_URL_GCB_CommonParams}} +
-"&holdMessageText=Gen-Hold-32" +
-"&resumeMessageText=Gen-Resume-33" +
-"&maxHoldAttempts=3" +
-"&maxHoldTime=30" +
-"&autoResumeEnabled=false" +
-"&displayActionButton=false" +
-"&externalAction=RESUME" +
-"&requestId=" + {{Scripter.Interaction ID}} + "-RESUME-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
-```
+## v1.7.2.10
+- Updated holdtimer compact alert text from "Hold limit reached" to "Time limit reached".
+- Increased compact timer height from 34px to 36px.
+- Kept compact width at 200px and freeze behavior at maxHoldTime.

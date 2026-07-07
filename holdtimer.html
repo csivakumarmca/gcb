@@ -50,9 +50,9 @@
       width:200px;
       min-width:200px;
       max-width:200px;
-      height:34px;
-      min-height:34px;
-      max-height:34px;
+      height:36px;
+      min-height:36px;
+      max-height:36px;
       border-radius:5px;
       padding:3px 7px 3px 7px;
       gap:2px;
@@ -164,7 +164,7 @@
         if (status === "HOLD_EXCEEDED" || rawElapsed >= max) {
           setCls("exceeded");
           setText("icon","⚠️");
-          setText("label","Hold limit reached");
+          setText("label","Time limit reached");
           setText("sub","Please click Resume to continue the chat.");
           setText("time", mmss(max));                 // IMPORTANT: do not keep counting after limit.
           notifyOnce(record);

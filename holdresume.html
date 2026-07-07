@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.0.13</title>
+  <title>Agent Hold Summary v1.7.2.9</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -569,8 +569,8 @@
         <span class="info-dot" title="Hold times are displayed in HH:MM:SS format.">i</span>
       </div>
       <div class="action-area">
-        <button id="holdResumeBtn" class="hold-action-btn" type="button" disabled>Hold</button>
-        <button id="refreshBtn" class="small-btn" type="button">Refresh</button>
+        <!-- Hold/Resume and Refresh buttons removed from the Hold Info page.
+             Hold/Resume is controlled from the Agent Script button using externalAction=HOLD/RESUME. -->
         <button id="debugBtn" class="small-btn" type="button" style="display:none;">Debug</button>
       </div>
     </div>
@@ -663,14 +663,14 @@
   <script src="./js/gcb-debug.js"></script>
   <script>
     /************************************************************
-     * HOLD RESUME PAGE - v1.0.12
+     * HOLD RESUME PAGE - v1.7.2.9
      * Uses existing Genesys client-side send-message approach.
-     * v1.0.12 release note:
+     * v1.7.2.9 release note:
      * - Browser notification/taskbar attention kept as optional best-effort alert.
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.8";
+    const HR_VERSION = "v1.7.2.9";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -2226,23 +2226,35 @@
 
     async function refreshHoldSummaryAfterAction(action) {
       const expectedCount = getAttemptStartedCount();
-      const maxTries = action === "RESUME" ? 4 : 2;
+      const maxTries = 4;
+      let lastError = null;
 
       for (let attempt = 1; attempt <= maxTries; attempt++) {
         await sleep(attempt === 1 ? CONFIG.autoRefreshDelayMs : 1200);
         try {
           await refreshHoldSummary(false);
+          lastError = null;
         } catch (err) {
-          addDebug("SUMMARY_RETRY_FAILED", "attempt=" + attempt + " | " + (err.message || String(err)));
-          if (attempt === maxTries) throw err;
+          lastError = err;
+          addDebug("SUMMARY_RETRY_FAILED", "action=" + action + " | attempt=" + attempt + " | " + (err.message || String(err)));
         }
 
         const visibleCount = getCurrentSessionCount();
         addDebug("SUMMARY_RETRY_CHECK", "action=" + action + " | attempt=" + attempt + " | visibleCount=" + visibleCount + " | expectedCount=" + expectedCount);
 
-        if (action !== "RESUME" || visibleCount >= expectedCount) {
+        if (action === "HOLD") {
+          // The Hold segment is active and may not appear in completed transcript counts yet.
+          // The local started-count/timer is already displayed, so one successful refresh is enough.
+          if (!lastError) return;
+        } else if (visibleCount >= expectedCount) {
           return;
         }
+      }
+
+      if (lastError) {
+        setStatus("Message sent, but latest hold details could not be refreshed yet. Cached/local values are shown.", "warning");
+        addDebug("SUMMARY_AFTER_ACTION_DEFERRED", lastError.message || String(lastError));
+        return;
       }
     }
 
@@ -2402,20 +2414,26 @@
 
     async function initPage() {
       const actionButton = document.getElementById("holdResumeBtn");
-      actionButton.addEventListener("click", handleHoldResumeClick);
-      if (!CONFIG.displayActionButton) {
+      if (actionButton) {
+        actionButton.addEventListener("click", handleHoldResumeClick);
         actionButton.style.display = "none";
-        addDebug("ACTION_BUTTON_HIDDEN", "displayActionButton=false. Hold/Resume action is expected from Agent Script externalAction.");
       }
-      document.getElementById("refreshBtn").addEventListener("click", async function () {
-        try {
-          applyCentralAutoResumeIfPresent();
-          setStatus("Refreshing hold summary...", "info");
-          await refreshHoldSummary(true);
-        } catch (err) {
-          setStatus(err.message || String(err), "error");
-        }
-      });
+      addDebug("ACTION_BUTTON_REMOVED", "Hold/Resume button is removed from Hold Info page. Agent Script controls action using externalAction=HOLD/RESUME.");
+
+      const refreshButton = document.getElementById("refreshBtn");
+      if (refreshButton) {
+        refreshButton.style.display = "none";
+        refreshButton.addEventListener("click", async function () {
+          try {
+            applyCentralAutoResumeIfPresent();
+            setStatus("Refreshing hold summary...", "info");
+            await refreshHoldSummary(true);
+          } catch (err) {
+            setStatus(err.message || String(err), "error");
+          }
+        });
+      }
+
       document.getElementById("debugBtn").addEventListener("click", function () {
         const panel = document.getElementById("debugPanel");
         if (!panel) return;
@@ -2469,33 +2487,34 @@
         return;
       }
 
-      if (!getAccessToken() && CONFIG.clientId) {
+      const hasToken = !!getAccessToken();
+      if (!hasToken && CONFIG.clientId) {
         isInitialSummaryLoading = false;
-        setStatus(CONFIG.displayActionButton ? "Ready. Click Hold to login and send the first hold message." : "Ready. Hold/Resume action will be triggered from Agent Script.", "info");
-      } else if (!CONFIG.clientId) {
+        setStatus("Ready. Hold/Resume action will be triggered from Agent Script.", "info");
+      } else if (!hasToken && !CONFIG.clientId) {
         isInitialSummaryLoading = false;
-        setStatus("clientId is missing. The page can show summary, but cannot send Hold/Resume without OAuth clientId.", "warning");
+        setStatus("clientId and OAuth token are missing. The page can show cached summary only. Pass clientId in the URL or open the GCB index page first.", "warning");
       } else {
         try {
-          setStatus("Checking existing hold count before enabling Hold...", "info");
-          addDebug("INITIAL_GUARD_START", "Hold button disabled until latest summary is loaded.");
+          setStatus("Loading latest hold details...", "info");
+          addDebug("INITIAL_SUMMARY_START", "Loading latest summary. tokenPresent=" + hasToken + " | clientIdPresent=" + !!CONFIG.clientId);
           await refreshHoldSummary(false);
           isInitialSummaryLoading = false;
           setStatus("Ready.", "success");
           hideStatusSoon();
-          addDebug("INITIAL_GUARD_OK", "Hold button enabled/blocked based on latest count. effectiveCount=" + getEffectiveHoldCount());
+          addDebug("INITIAL_SUMMARY_OK", "Summary loaded. effectiveCount=" + getEffectiveHoldCount());
         } catch (err) {
           const errText = err.message || String(err);
-          addDebug("INITIAL_GUARD_FAILED", errText);
+          addDebug("INITIAL_SUMMARY_FAILED", errText);
 
           if (isAuthOrConversationAccessError(err)) {
             const recoveryStarted = await recoverAuthAndReload("Initial hold summary validation failed: " + errText);
             if (recoveryStarted) return;
           }
 
-          isInitialSummaryLoading = true;
-          setStatus("Hold is disabled because existing hold count could not be validated: " + errText, "error");
-          showPersistentAlert("Unable to validate existing hold count. Hold is disabled to avoid exceeding the maximum limit.", "error");
+          isInitialSummaryLoading = false;
+          setStatus("Unable to load latest hold details. Cached values are shown: " + errText, "warning");
+          showPersistentAlert("Unable to refresh hold details. Cached values are shown. Hold action is still protected by local max-attempt validation.", "warning");
         }
       }
 
