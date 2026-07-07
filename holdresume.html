@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.7.2.14</title>
+  <title>Agent Hold Summary v1.7.2.15</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -678,7 +678,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.14";
+    const HR_VERSION = "v1.7.2.15";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -2302,8 +2302,9 @@
     function tickTimer() {
       if (!activeTimer) return;
       const remaining = Math.max(0, Math.ceil((Number(activeTimer.expiresAt) - Date.now()) / 1000));
-      const elapsed = Math.max(0, Number(activeTimer.totalSeconds || 0) - remaining);
+      const rawElapsed = Math.max(0, Number(activeTimer.totalSeconds || 0) - remaining);
       const totalSeconds = Math.max(1, Number(activeTimer.totalSeconds || 0));
+      const elapsed = Math.max(0, Math.min(totalSeconds, rawElapsed));
       const usedPercent = Math.max(0, Math.min(100, (elapsed / totalSeconds) * 100));
 
       document.getElementById("holdTimeCard").classList.add("timer-active");
@@ -2314,21 +2315,25 @@
       const fill = document.getElementById("timerProgressFill");
       if (card) {
         let timerClass = "metric-card timer-indicator-card active";
-        if (remaining <= 15) timerClass += " danger";
+        if (remaining <= 0 || remaining <= 15) timerClass += " danger";
         else if (remaining <= 60) timerClass += " warning";
         card.className = timerClass;
       }
       if (fill) fill.style.width = usedPercent + "%";
 
-      setText("timerRemainingValue", mmss(remaining));
+      // Keep the visible Hold Info timer consistent with holdtimer.html.
+      // Both widgets now show elapsed hold time increasing from 00:00 to maxHoldTime.
+      setText("timerRemainingValue", mmss(elapsed));
       setText("timerElapsedText", mmss(elapsed));
       setText("timerMaxText", mmss(totalSeconds));
 
       if (remaining <= 0) {
+        setText("timerRemainingValue", mmss(totalSeconds));
+        setText("timerElapsedText", mmss(totalSeconds));
         if (CONFIG.autoResumeEnabled) {
           setText("timerIndicatorStatus", "Time reached. Auto resume is sending...");
         } else {
-          setText("timerIndicatorStatus", "Hold duration reached - manual Resume required");
+          setText("timerIndicatorStatus", "Time limit reached - manual Resume required");
         }
         if (holdTimerInterval) {
           clearInterval(holdTimerInterval);
@@ -2341,9 +2346,9 @@
       if (remaining <= 15) {
         setText("timerIndicatorStatus", CONFIG.autoResumeEnabled ? "Critical: auto resume soon" : "Critical: manual resume required soon");
       } else if (remaining <= 60) {
-        setText("timerIndicatorStatus", "Warning: less than 1 minute");
+        setText("timerIndicatorStatus", "Customer on hold");
       } else {
-        setText("timerIndicatorStatus", CONFIG.autoResumeEnabled ? "Hold active - auto resume at 00:00" : "Hold active - manual Resume required at 00:00");
+        setText("timerIndicatorStatus", CONFIG.autoResumeEnabled ? "Hold active - auto resume at max time" : "Hold active - manual Resume at max time");
       }
     }
 

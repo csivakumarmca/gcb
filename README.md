@@ -1,19 +1,14 @@
-# GCB Generic v1.7.2.14 - HoldResume visible timer sync fix
+# GCB Generic v1.7.2.15 - HoldResume Elapsed Timer Sync
 
-## Change
-Fixed the visible Hold Info page (`holdresume.html`) timer indicator when Hold/Resume is triggered from the Agent Script button.
+Changes:
+- Updated holdresume.html timer indicator to match holdtimer.html behavior.
+- Hold Info timer now shows elapsed time increasing from 00:00 to maxHoldTime.
+- At maxHoldTime, Hold Info timer freezes at max value, e.g. 00:30.
+- Removed countdown display inside holdresume.html so it no longer shows 00:19 while holdtimer.html shows 00:11.
+- No change to Hold/Resume send logic.
+- No change to holdtimer.html.
 
-## Issue fixed
-When the Agent Script button sent `externalAction=HOLD`, the separate `holdtimer.html` widget started correctly, but the already-open Hold Info page kept showing `Hold Timer Indicator 00:00 / Timer not active`.
+Cache version: v=172215
 
-## Fix
-- `holdresume.html` now listens/polls the shared central hold record.
-- If another iframe/action instance starts HOLD, the visible Hold Info page adopts that active hold timer.
-- The Hold Info timer indicator and current active hold elapsed time now run immediately.
-- After RESUME, the visible Hold Info page resets back to Timer not active.
-
-## Minimum file to replace
-- `holdresume.html`
-
-## Cache version
-Use `v=172214` for the Hold Info URL.
+Minimum file to replace:
+- holdresume.html
