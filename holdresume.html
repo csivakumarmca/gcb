@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.0.12</title>
+  <title>Agent Hold Summary v1.0.13</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -670,7 +670,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.3";
+    const HR_VERSION = "v1.7.2.8";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1103,6 +1103,9 @@
       maxHoldAttempts: Math.max(1, getNumberParam("maxHoldAttempts", 3)),
       maxHoldTime: getNumberParam("maxHoldTime", getNumberParam("holdTimerSeconds", 0)),
       autoResumeEnabled: getBoolParam("autoResumeEnabled", false),
+      displayActionButton: getBoolParam("displayActionButton", true),
+      externalAction: safeString(getParam("externalAction", getParam("action", "NONE"))).toUpperCase(),
+      externalActionRequestId: safeString(getParam("requestId", "")),
       holdDetailsApiUrl: getParam("holdDetailsApiUrl", getParam("calculateHoldDetailsUrl", "")),
       debug: getBoolParam("debug", false),
       visibleDebug: getBoolParam("pageDebug", false) || getBoolParam("showPageDebug", false),
@@ -2244,36 +2247,82 @@
     }
 
     /************************************************************
+     * External Agent Script action support
+     *
+     * externalAction=HOLD or externalAction=RESUME allows the main
+     * Agent Script button to trigger the same hold/resume logic while
+     * this page continues to display the detailed Hold Info summary.
+     ************************************************************/
+    function getExternalActionStateKey() {
+      const rawId = CONFIG.externalActionRequestId || [
+        CONFIG.conversationId || "NO_CONV",
+        CONFIG.externalAction || "NONE",
+        CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_COMM"
+      ].join("|");
+      return "GCB_HR_EXTERNAL_ACTION_" + sanitizeKey(rawId);
+    }
+
+    function getExternalActionState() {
+      try {
+        const raw = localStorage.getItem(getExternalActionStateKey());
+        return raw ? JSON.parse(raw) : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function setExternalActionState(status, detail) {
+      try {
+        localStorage.setItem(getExternalActionStateKey(), JSON.stringify({
+          status: status,
+          detail: safeString(detail),
+          action: CONFIG.externalAction,
+          requestId: CONFIG.externalActionRequestId,
+          savedAt: Date.now(),
+          savedAtUtc: new Date().toISOString()
+        }));
+      } catch (_) {}
+    }
+
+    function isExternalActionRequested() {
+      return CONFIG.externalAction === "HOLD" || CONFIG.externalAction === "RESUME";
+    }
+
+    /************************************************************
      * Button click loop
      ************************************************************/
-    async function handleHoldResumeClick() {
-      if (isProcessing) return;
+    async function processHoldResumeAction(action, triggerSource) {
+      if (isProcessing) return { skipped: true, reason: "PROCESSING" };
 
-      const action = isOnHold ? "RESUME" : "HOLD";
+      action = safeString(action).toUpperCase();
+      if (action !== "HOLD" && action !== "RESUME") {
+        throw new Error("Invalid hold action: " + action);
+      }
+
       const messageText = action === "HOLD" ? CONFIG.holdMessageText : CONFIG.resumeMessageText;
 
       if (action === "HOLD") {
-        requestBrowserNotificationPermissionIfPossible("HOLD_CLICK");
+        requestBrowserNotificationPermissionIfPossible(triggerSource === "EXTERNAL" ? "EXTERNAL_HOLD" : "HOLD_CLICK");
       }
 
       if (action === "HOLD" && getEffectiveHoldCount() >= CONFIG.maxHoldAttempts) {
         const validationMessage = "⚠️  ⛔ You have already reached the maximum allowed hold attempts. ⏱ (" + getEffectiveHoldCount() + " / " + CONFIG.maxHoldAttempts + ")";
         startAttentionAlert(validationMessage, "error", "⛔ Max Hold Reached");
         setStatus(validationMessage, "error");
-        addDebug("VALIDATION_BLOCK", "Max hold attempts reached. effectiveCount=" + getEffectiveHoldCount() + " | max=" + CONFIG.maxHoldAttempts);
+        addDebug("VALIDATION_BLOCK", "Max hold attempts reached. trigger=" + safeString(triggerSource) + " | effectiveCount=" + getEffectiveHoldCount() + " | max=" + CONFIG.maxHoldAttempts);
         updateButtonState();
-        return;
+        return { blocked: true, reason: "MAX_ATTEMPTS" };
       }
 
       if (action === "RESUME") {
         const record = readOwnCentralHoldRecord();
         if (record && (record.status === "RESUME_IN_PROGRESS" || record.status === "RESUMED_AUTO" || record.status === "RESUMED_MANUAL" || record.resumeSent === true)) {
-          addDebug("MANUAL_RESUME_SKIPPED", "Resume already handled or in progress by central/local record. status=" + safeString(record.status));
+          addDebug("MANUAL_RESUME_SKIPPED", "Resume already handled or in progress by central/local record. trigger=" + safeString(triggerSource) + " | status=" + safeString(record.status));
           applyCentralAutoResumeIfPresent();
-          return;
+          return { skipped: true, reason: "RESUME_ALREADY_HANDLED" };
         }
         // Lock the central hold record before sending the manual Resume so the index monitor cannot also send Resume.
-        updateCentralHoldRecordStatus("RESUME_IN_PROGRESS", "MANUAL_RESUME_CLICK_START");
+        updateCentralHoldRecordStatus("RESUME_IN_PROGRESS", triggerSource === "EXTERNAL" ? "EXTERNAL_RESUME_START" : "MANUAL_RESUME_CLICK_START");
       }
 
       isProcessing = true;
@@ -2282,7 +2331,7 @@
 
       try {
         const result = await sendMessageToConversation(action, messageText);
-        if (result && result.redirected) return;
+        if (result && result.redirected) return { redirected: true };
 
         if (action === "HOLD") {
           markHoldAttemptStarted();
@@ -2291,33 +2340,73 @@
           persistButtonState();
           startMaxHoldTimer();
           saveCentralHoldRecord();
-          setStatus("Hold message sent. Timer started.", "success");
+          setStatus(triggerSource === "EXTERNAL" ? "Hold message sent from Agent Script. Timer started." : "Hold message sent. Timer started.", "success");
         } else {
           isOnHold = false;
           persistButtonState();
           stopMaxHoldTimer(true);
-          updateCentralHoldRecordStatus("RESUMED_MANUAL", "MANUAL_RESUME_CLICK");
-          setStatus("Resume message sent. Timer stopped.", "success");
+          updateCentralHoldRecordStatus("RESUMED_MANUAL", triggerSource === "EXTERNAL" ? "EXTERNAL_RESUME" : "MANUAL_RESUME_CLICK");
+          setStatus(triggerSource === "EXTERNAL" ? "Resume message sent from Agent Script. Timer stopped." : "Resume message sent. Timer stopped.", "success");
         }
 
         updateButtonState();
         await refreshHoldSummaryAfterAction(action);
         hideStatusSoon();
+        return { ok: true, action: action };
       } catch (err) {
         if (action === "RESUME") {
-          // Manual Resume failed, unlock the central record so the central monitor can still retry if the hold is due.
-          updateCentralHoldRecordStatus("HOLD", "MANUAL_RESUME_FAILED_UNLOCK");
+          // Manual Resume failed, unlock the central record so the central monitor can still retry if needed.
+          updateCentralHoldRecordStatus("HOLD", "RESUME_FAILED_UNLOCK");
         }
         setStatus(err.message || String(err), "error");
-        addDebug("CLICK_FAILED", err.message || String(err));
+        addDebug(triggerSource === "EXTERNAL" ? "EXTERNAL_ACTION_FAILED" : "CLICK_FAILED", err.message || String(err));
+        throw err;
       } finally {
         isProcessing = false;
         updateButtonState();
       }
     }
 
+    async function handleHoldResumeClick() {
+      const action = isOnHold ? "RESUME" : "HOLD";
+      return processHoldResumeAction(action, "BUTTON");
+    }
+
+    async function processExternalActionIfNeeded() {
+      if (!isExternalActionRequested()) return;
+
+      const previous = getExternalActionState();
+      if (previous && (previous.status === "DONE" || previous.status === "IN_PROGRESS")) {
+        addDebug("EXTERNAL_ACTION_DUPLICATE_SKIP", "action=" + CONFIG.externalAction + " | status=" + safeString(previous.status) + " | requestId=" + (CONFIG.externalActionRequestId || "[auto]"));
+        if (previous.status === "DONE") {
+          setStatus("External " + CONFIG.externalAction + " action already processed.", "info");
+          hideStatusSoon();
+        }
+        return;
+      }
+
+      addDebug("EXTERNAL_ACTION_START", "action=" + CONFIG.externalAction + " | requestId=" + (CONFIG.externalActionRequestId || "[auto]") + " | displayActionButton=" + CONFIG.displayActionButton);
+      setExternalActionState("IN_PROGRESS", "Started");
+
+      try {
+        const result = await processHoldResumeAction(CONFIG.externalAction, "EXTERNAL");
+        if (result && result.redirected) return;
+        setExternalActionState("DONE", result && result.reason ? result.reason : "OK");
+        addDebug("EXTERNAL_ACTION_DONE", "action=" + CONFIG.externalAction);
+      } catch (err) {
+        // Clear failed state so a new requestId or a retry can process again.
+        try { localStorage.removeItem(getExternalActionStateKey()); } catch (_) {}
+        throw err;
+      }
+    }
+
     async function initPage() {
-      document.getElementById("holdResumeBtn").addEventListener("click", handleHoldResumeClick);
+      const actionButton = document.getElementById("holdResumeBtn");
+      actionButton.addEventListener("click", handleHoldResumeClick);
+      if (!CONFIG.displayActionButton) {
+        actionButton.style.display = "none";
+        addDebug("ACTION_BUTTON_HIDDEN", "displayActionButton=false. Hold/Resume action is expected from Agent Script externalAction.");
+      }
       document.getElementById("refreshBtn").addEventListener("click", async function () {
         try {
           applyCentralAutoResumeIfPresent();
@@ -2382,7 +2471,7 @@
 
       if (!getAccessToken() && CONFIG.clientId) {
         isInitialSummaryLoading = false;
-        setStatus("Ready. Click Hold to login and send the first hold message.", "info");
+        setStatus(CONFIG.displayActionButton ? "Ready. Click Hold to login and send the first hold message." : "Ready. Hold/Resume action will be triggered from Agent Script.", "info");
       } else if (!CONFIG.clientId) {
         isInitialSummaryLoading = false;
         setStatus("clientId is missing. The page can show summary, but cannot send Hold/Resume without OAuth clientId.", "warning");
@@ -2411,7 +2500,10 @@
       }
 
       updateButtonState();
-      addDebug("INIT", "version=" + HR_VERSION + " | conversationId=" + CONFIG.conversationId + " | region=" + CONFIG.region + " | maxHoldAttempts=" + CONFIG.maxHoldAttempts + " | maxHoldTime=" + CONFIG.maxHoldTime);
+      if (!isInitialSummaryLoading) {
+        await processExternalActionIfNeeded();
+      }
+      addDebug("INIT", "version=" + HR_VERSION + " | conversationId=" + CONFIG.conversationId + " | region=" + CONFIG.region + " | maxHoldAttempts=" + CONFIG.maxHoldAttempts + " | maxHoldTime=" + CONFIG.maxHoldTime + " | externalAction=" + CONFIG.externalAction);
       renderDebugPanel();
     }
 

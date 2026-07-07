@@ -1,95 +1,56 @@
-# GCB v1.7.2.7 - Hold Timer Compact Width 200
+# GCB v1.7.2.8 - HoldResume External Action Patch
 
-# GCB v1.7.2.3 - Manual Hold Alert + Timer Widget
+Baseline: v1.7.2.7 HoldTimer compact width 200.
 
-This package is based on the confirmed working **v1.7.2.2 SendMsg Fast** baseline.
+## What changed
 
-## What is kept unchanged
+Only `holdresume.html` was changed.
 
-- SendMsg fast behavior is retained (`v5.2.2-fast`).
-- SendMsg uses Agent Script URL values directly.
-- SendMsg duplicate guard remains enabled.
-- Prospects page remains unchanged.
-- Full CommonParams must remain unchanged.
+New parameters:
 
-## What changed in this package
+- `displayActionButton=false`
+  - Hides the internal Hold/Resume button inside `holdresume.html`.
+  - The page still displays all existing Hold Info details, summary, timer, history, alerts, and validation.
 
-### 1. Auto Resume is now configurable
+- `externalAction=HOLD|RESUME|NONE`
+  - Allows the Agent Script page button to trigger Hold or Resume action through the same `holdresume.html` page.
+  - `externalAction=NONE` keeps the page as display/details only.
 
-New Hold URL parameter:
+- `requestId=<unique id>`
+  - Used as a duplicate guard for external actions.
+  - If the same external action URL is loaded more than once, the action is not repeated for the same requestId.
 
-```text
-&autoResumeEnabled=false
-```
+## Behavior
 
-When `autoResumeEnabled=false`:
+- `externalAction=HOLD`
+  - Validates max hold attempts first.
+  - If limit is reached, Gen-Hold-32 is not sent.
+  - If allowed, sends Gen-Hold-32, starts timer, saves local hold record, and updates summary.
 
-- Hold sends `Gen-Hold-32`.
-- Timer starts and continues.
-- When `maxHoldTime` is reached, **no automatic `Gen-Resume-33` is sent**.
-- Agent-side alert/notification is shown.
-- Agent must manually click **Resume**.
+- `externalAction=RESUME`
+  - Sends Gen-Resume-33, stops timer, updates local hold record, and refreshes summary.
 
-When `autoResumeEnabled=true`:
+- Resume remains allowed even if maximum hold count has already been reached.
+- Auto-resume is still controlled by `autoResumeEnabled`; business current setting should be `autoResumeEnabled=false`.
+- SendMsg and Prospects are unchanged.
 
-- Old central/local auto-resume behavior can be enabled again.
+## Recommended URLs
 
-### 2. Agent-side alert when hold time is exceeded
-
-When max hold time is reached with manual resume mode:
-
-```text
-Maximum hold duration reached. Please click Resume to continue the chat.
-```
-
-The alert is shown as:
-
-- In-page persistent warning
-- Browser notification if permission is granted
-- Title blink / visual attention
-- Beep best-effort if browser allows audio
-
-### 3. New holdtimer.html page
-
-New file:
-
-```text
-holdtimer.html
-```
-
-Purpose:
-
-- Timer-only display widget for Summary / Product / Prospects or other script tabs.
-- No Hold/Resume button.
-- No summary cards/history.
-- Reads active hold state from localStorage.
-- Shows active hold timer and exceeded warning.
-
-Recommended URL:
-
-```javascript
-AFT_URL_HoldTimer =
-{{AFT_URL_GCB_RootURL}} +
-"holdtimer.html?" +
-"v=17223" +
-{{AFT_URL_GCB_CommonParams}} +
-"&maxHoldTime=30" +
-"&browserNotificationEnabled=true"
-```
-
-## Recommended Hold URL
+Hold Info page only:
 
 ```javascript
 AFT_URL_HoldResume =
 {{AFT_URL_GCB_RootURL}} +
 "holdresume.html?" +
-"v=17223" +
+"v=17228" +
 {{AFT_URL_GCB_CommonParams}} +
 "&holdMessageText=Gen-Hold-32" +
 "&resumeMessageText=Gen-Resume-33" +
 "&maxHoldAttempts=3" +
 "&maxHoldTime=30" +
 "&autoResumeEnabled=false" +
+"&displayActionButton=false" +
+"&externalAction=NONE" +
 "&isCustomerBasedHoldCalculation=false" +
 "&alertBlinkEnabled=true" +
 "&alertSoundEnabled=true" +
@@ -104,69 +65,38 @@ AFT_URL_HoldResume =
 "&notificationAutoCloseMs=12000"
 ```
 
-## CommonParams - keep full old values
+Agent Script Hold action:
 
 ```javascript
-AFT_URL_GCB_CommonParams =
-"&conversationId=" + {{Scripter.Interaction ID}} +
-"&communicationId=" + {{Scripter.Agent Communication ID}} +
-"&agentCommunicationId=" + {{Scripter.Agent Communication ID}} +
-"&participantId=" + {{Scripter.Agent Participant ID}} +
-"&agentParticipantId=" + {{Scripter.Agent Participant ID}} +
-"&customerCommunicationId=" + {{Scripter.Customer Communication ID}} +
-"&agentName=" + {{Scripter.Agent Name}} +
-"&source=AgentScript"
-```
-
-## Files in this package
-
-- `index.html` - GCB central status page and central hold monitor. Auto-resume now respects `autoResumeEnabled`.
-- `sendmsg.html` - unchanged fast SendMsg page.
-- `holdresume.html` - main Hold/Resume control page with configurable auto-resume and manual alert.
-- `holdtimer.html` - new timer-only page for other tabs.
-- `prospects.html` - unchanged Prospects page.
-- `README.md` - this file.
-
-## Cache version
-
-Use a fresh cache version:
-
-```text
-v=17223
-```
-
-
-## v1.7.2.4 Update
-- Updated `holdtimer.html` only.
-- Timer-only widget now freezes at `maxHoldTime` after the limit is reached instead of continuing to count upward.
-- Added optional `compact=true` URL parameter for smaller timer display on Summary/Product/Prospects tabs.
-- Manual Resume behavior remains unchanged. No automatic Resume is sent when `autoResumeEnabled=false`.
-
-Recommended timer-only URL:
-```javascript
-AFT_URL_HoldTimer =
+AFT_URL_HoldResume_Action =
 {{AFT_URL_GCB_RootURL}} +
-"holdtimer.html?" +
-"v=17224" +
+"holdresume.html?" +
+"v=17228" +
 {{AFT_URL_GCB_CommonParams}} +
+"&holdMessageText=Gen-Hold-32" +
+"&resumeMessageText=Gen-Resume-33" +
+"&maxHoldAttempts=3" +
 "&maxHoldTime=30" +
-"&browserNotificationEnabled=true" +
-"&compact=true"
+"&autoResumeEnabled=false" +
+"&displayActionButton=false" +
+"&externalAction=HOLD" +
+"&requestId=" + {{Scripter.Interaction ID}} + "-HOLD-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
 ```
 
+Agent Script Resume action:
 
-## v1.7.2.5 - Hold Timer Micro Layout + Freeze Fix
-- Updated `holdtimer.html` only.
-- `compact=true` now uses a one-line micro timer layout suitable for 35-38 px Agent Script web page height.
-- The title is next to the timer/progress bar.
-- When max hold time is reached, timer freezes at `maxHoldTime` and shows `Hold limit reached`.
-- No SendMsg, Prospects, or Hold/Resume control logic changes.
-- Recommended cache: `v=17225`.
-
-
-## v1.7.2.7 update
-- Kept compact holdtimer design.
-- Changed compact timer width to fixed 200px.
-- No change to SendMsg, Hold/Resume or Prospects.
-- Timer still freezes at maxHoldTime after hold limit is reached.
-- Use `&compact=true`; `&mode=micro` is not required.
+```javascript
+AFT_URL_HoldResume_Action =
+{{AFT_URL_GCB_RootURL}} +
+"holdresume.html?" +
+"v=17228" +
+{{AFT_URL_GCB_CommonParams}} +
+"&holdMessageText=Gen-Hold-32" +
+"&resumeMessageText=Gen-Resume-33" +
+"&maxHoldAttempts=3" +
+"&maxHoldTime=30" +
+"&autoResumeEnabled=false" +
+"&displayActionButton=false" +
+"&externalAction=RESUME" +
+"&requestId=" + {{Scripter.Interaction ID}} + "-RESUME-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
+```
