@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.19</title>
+  <title>GCB Hold Timer v1.7.2.21</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -14,17 +14,9 @@
     body { font-family: Arial, Helvetica, sans-serif; background:transparent; color:#0f172a; font-size:11px; }
 
     .timer-widget {
-      width:100%;
-      min-height:48px;
-      border:1px solid var(--line);
-      border-radius:8px;
-      background:#fff;
-      padding:7px 9px;
-      box-shadow:0 1px 2px rgba(15,23,42,.08);
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
-      gap:4px;
+      width:100%; min-height:48px; border:1px solid var(--line); border-radius:8px;
+      background:#fff; padding:7px 9px; box-shadow:0 1px 2px rgba(15,23,42,.08);
+      display:flex; flex-direction:column; justify-content:center; gap:4px;
     }
     .topline { display:flex; align-items:center; gap:7px; min-width:0; }
     .icon { width:18px; text-align:center; font-size:15px; flex:0 0 auto; }
@@ -37,26 +29,21 @@
     .timer-widget.idle { background:#f8fafc; }
     .timer-widget.active { border-color:#38bdf8; background:#eff6ff; }
     .timer-widget.warning { border-color:#f59e0b; background:#fffbeb; }
-    .timer-widget.exceeded { border-color:#ef4444; background:#fef2f2; animation:pulse 1s infinite; }
+    .timer-widget.processing { border-color:#38bdf8; background:#eff6ff; }
+    .timer-widget.exceeded { border-color:#ef4444; background:#fef2f2; }
+    .timer-widget.exceeded.blinking { animation:pulse 1s infinite; }
     .idle .time { color:var(--muted); }
     .warning .time { color:var(--warn); }
+    .processing .time { color:var(--blueText); }
     .exceeded .time { color:var(--danger); }
     .warning .fill { background:#f59e0b; }
+    .processing .fill { background:#38bdf8; width:20% !important; }
     .exceeded .fill { background:#ef4444; width:100% !important; }
     @keyframes pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 0 3px rgba(239,68,68,.16)} }
 
-    /* Micro layout for Agent Script 35-38px web page component. */
     body.compact .timer-widget {
-      width:200px;
-      min-width:200px;
-      max-width:200px;
-      height:36px;
-      min-height:36px;
-      max-height:36px;
-      border-radius:5px;
-      padding:3px 7px 3px 7px;
-      gap:2px;
-      box-shadow:none;
+      width:200px; min-width:200px; max-width:200px; height:36px; min-height:36px; max-height:36px;
+      border-radius:5px; padding:3px 7px; gap:2px; box-shadow:none;
     }
     body.compact .topline { gap:5px; height:20px; }
     body.compact .icon { width:14px; font-size:12px; }
@@ -65,15 +52,7 @@
     body.compact .sub { display:none; }
     body.compact .bar { height:3px; margin-left:19px; }
 
-    /* Ultra mode if the script page gives only ~30px height. */
-    body.micro .timer-widget {
-      height:30px;
-      min-height:30px;
-      max-height:30px;
-      padding:2px 6px;
-      gap:1px;
-      border-radius:4px;
-    }
+    body.micro .timer-widget { height:30px; min-height:30px; max-height:30px; padding:2px 6px; gap:1px; border-radius:4px; }
     body.micro .topline { height:18px; }
     body.micro .label { font-size:10px; }
     body.micro .time { font-size:15px; line-height:16px; min-width:42px; }
@@ -94,31 +73,56 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.19";
+      const VERSION = "v1.7.2.21";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+      const ACTION_STATE_PREFIX = "GCB_HT_EXTERNAL_ACTION_";
       const ORIGINAL_TITLE = document.title;
       let titleBlinkInterval = null;
+      let processingAction = false;
+      let processingLabel = "";
+
       const params = new URLSearchParams(window.location.search || "");
       function p(name, def){ const v=params.get(name); return v===null || v==="" ? def : v; }
       function n(name, def){ const v=Number(p(name, def)); return Number.isFinite(v) ? v : def; }
       function b(name, def){ const raw=String(p(name, def ? "true" : "false")).toLowerCase(); return !(raw === "false" || raw === "0" || raw === "no"); }
       function sanitizeKey(value){ return String(value||"").replace(/[^a-zA-Z0-9_.:-]+/g,"_"); }
+      function decodeMessageText(value){ try { return decodeURIComponent(String(value || "").replace(/\+/g, "%20")); } catch(_) { return String(value || ""); } }
+      function safe(value){ return String(value == null ? "" : value); }
+
       const CONFIG = {
+        region:p("region", p("gcTargetEnv", "mypurecloud.ie")),
         conversationId:p("conversationId", ""),
         communicationId:p("communicationId", p("agentCommunicationId", "")),
         agentCommunicationId:p("agentCommunicationId", p("communicationId", "")),
+        participantId:p("participantId", p("agentParticipantId", "")),
+        agentParticipantId:p("agentParticipantId", p("participantId", "")),
         customerCommunicationId:p("customerCommunicationId", ""),
+        holdMessageText:decodeMessageText(p("holdMessageText", "Gen-Hold-32")),
+        resumeMessageText:decodeMessageText(p("resumeMessageText", "Gen-Resume-33")),
+        maxHoldAttempts:Math.max(1, n("maxHoldAttempts", 3)),
         maxHoldTime:n("maxHoldTime", 30),
-        browserNotificationEnabled:b("browserNotificationEnabled", true),
-        alertSoundEnabled:b("alertSoundEnabled", true),
-        taskbarBlinkEnabled:b("taskbarBlinkEnabled", true),
-        titleBlinkDurationMs:Math.max(3000, n("titleBlinkDurationMs", 30000)),
+        autoResumeEnabled:b("autoResumeEnabled", false),
+        externalAction:String(p("externalAction", p("action", "NONE"))).toUpperCase(),
+        requestId:p("requestId", ""),
+        // Alert behavior is owned by holdtimer.html and kept inside this file.
+        // Agent Script should pass only functional parameters such as message text, maxHoldTime, action and requestId.
+        browserNotificationEnabled:true,
+        alertSoundEnabled:true,
+        taskbarBlinkEnabled:true,
+        titleBlinkDurationMs:30000,
+        alertBlinkEnabled:true,
+        alertBlinkDurationMs:15000,
+        alertSoundRepeatCount:1,
+        alertSoundDurationMs:600,
+        alertSoundGapMs:250,
+        notificationAutoCloseMs:12000,
         compact:b("compact", false),
         mode:String(p("mode", "")).toLowerCase()
       };
-      if (CONFIG.compact) { document.body.classList.add("compact"); }
-      if (CONFIG.mode === "micro") { document.body.classList.add("compact", "micro"); }
+      const API_BASE = "https://api." + CONFIG.region;
+      if (CONFIG.compact) document.body.classList.add("compact");
+      if (CONFIG.mode === "micro") document.body.classList.add("compact", "micro");
 
       function getCentralHoldKey(){
         return sanitizeKey([CONFIG.conversationId || "NO_CONV", CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_AGENT_COMM", CONFIG.customerCommunicationId || "NO_CUSTOMER_COMM"].join("|"));
@@ -126,25 +130,132 @@
       function readRecords(){
         try { const raw=localStorage.getItem(GCB_ACTIVE_HOLDS_KEY); const obj=raw?JSON.parse(raw):{}; return obj && typeof obj==="object" && !Array.isArray(obj) ? obj : {}; } catch(e){ return {}; }
       }
-      function isActiveHoldRecord(record){
-        const status = String((record && record.status) || "");
-        return ["HOLD", "HOLD_EXCEEDED", "RESUME_IN_PROGRESS"].includes(status);
+      function writeRecords(records){ try { localStorage.setItem(GCB_ACTIVE_HOLDS_KEY, JSON.stringify(records || {})); } catch(_){} }
+      function broadcast(type, record){
+        try { if (typeof BroadcastChannel !== "undefined") { const ch=new BroadcastChannel(GCB_HOLD_CHANNEL); ch.postMessage({ type:type, record:record||null, time:new Date().toISOString(), source:"holdtimer.html", version:VERSION }); ch.close(); } } catch(_) {}
       }
+      function isActiveHoldRecord(record){ const status = String((record && record.status) || ""); return ["HOLD", "HOLD_EXCEEDED", "RESUME_IN_PROGRESS"].includes(status); }
       function findRecord(){
         const records=readRecords();
         const exact=records[getCentralHoldKey()];
-
-        // IMPORTANT FIX v1.7.2.19:
-        // The exact central record may remain in localStorage after Resume as RESUMED_MANUAL.
-        // Do not display completed Resume records as active hold, otherwise the timer stays
-        // on "Time limit reached" after Resume.
         if (isActiveHoldRecord(exact)) return exact;
-
-        const vals=Object.values(records);
-        return vals.find(r => r && r.conversationId === CONFIG.conversationId && isActiveHoldRecord(r)) || null;
+        return Object.values(records).find(r => r && r.conversationId === CONFIG.conversationId && isActiveHoldRecord(r)) || null;
       }
+      function saveHoldRecord(){
+        if (!CONFIG.conversationId || !(CONFIG.agentCommunicationId || CONFIG.communicationId)) return null;
+        const records=readRecords();
+        const key=getCentralHoldKey();
+        const now=Date.now();
+        const record={
+          key:key, conversationId:CONFIG.conversationId, communicationId:CONFIG.communicationId,
+          agentCommunicationId:CONFIG.agentCommunicationId || CONFIG.communicationId,
+          participantId:CONFIG.participantId, agentParticipantId:CONFIG.agentParticipantId || CONFIG.participantId,
+          customerCommunicationId:CONFIG.customerCommunicationId,
+          holdMessageText:CONFIG.holdMessageText, resumeMessageText:CONFIG.resumeMessageText,
+          maxHoldTime:CONFIG.maxHoldTime, maxHoldAttempts:CONFIG.maxHoldAttempts, autoResumeEnabled:CONFIG.autoResumeEnabled,
+          holdStartTimeMs:now, holdStartTimeUtc:new Date(now).toISOString(), status:"HOLD", resumeSent:false,
+          activePageId:"holdtimer-" + now, activePageHeartbeatMs:now, activePageHeartbeatUtc:new Date(now).toISOString(),
+          activePageVisible:!document.hidden, activePageActivity:"HOLD_STARTED", source:"holdtimer.html"
+        };
+        records[key]=record;
+        writeRecords(records);
+        try { localStorage.removeItem("GCB_HOLD_ALERT_SENT_" + sanitizeKey(key)); } catch(_) {}
+        broadcast("HOLD_STARTED", record);
+        return record;
+      }
+      function markHoldExceeded(record){
+        if (!record || !record.key) return;
+        const records=readRecords();
+        const current=records[record.key];
+        if (!current || current.status !== "HOLD") return;
+        current.status="HOLD_EXCEEDED";
+        current.holdExceededTimeUtc=new Date().toISOString();
+        current.resumeSent=false;
+        records[record.key]=current;
+        writeRecords(records);
+        broadcast("HOLD_EXCEEDED", current);
+      }
+      function removeHoldRecord(reason){
+        const records=readRecords();
+        const key=getCentralHoldKey();
+        const record=records[key] || findRecord();
+        if (record && record.key && records[record.key]) delete records[record.key];
+        else delete records[key];
+        writeRecords(records);
+        broadcast("RESUMED_MANUAL", record || { key:key, conversationId:CONFIG.conversationId, reason:reason || "RESUME" });
+      }
+
+      function getAccessToken(){
+        const token=sessionStorage.getItem("gc_access_token");
+        const expiresAt=Number(sessionStorage.getItem("gc_token_expires_at") || 0);
+        if (!token) return "";
+        if (!expiresAt || Date.now() > expiresAt - 60000) {
+          sessionStorage.removeItem("gc_access_token");
+          sessionStorage.removeItem("gc_token_expires_at");
+          return "";
+        }
+        return token;
+      }
+      function buildActionKey(){
+        const raw=CONFIG.requestId || [CONFIG.conversationId || "NO_CONV", CONFIG.externalAction || "NONE", CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_COMM"].join("|");
+        return ACTION_STATE_PREFIX + sanitizeKey(raw);
+      }
+      function getActionState(){ try { const raw=localStorage.getItem(buildActionKey()); return raw ? JSON.parse(raw) : null; } catch(_) { return null; } }
+      function setActionState(status, detail){
+        try { localStorage.setItem(buildActionKey(), JSON.stringify({ status:status, detail:safe(detail), action:CONFIG.externalAction, requestId:CONFIG.requestId, savedAt:Date.now(), savedAtUtc:new Date().toISOString(), page:"holdtimer.html" })); } catch(_) {}
+      }
+      async function sendMessage(action){
+        const token=getAccessToken();
+        if (!token) throw new Error("OAuth token missing. Open/refresh GCB index page first.");
+        if (!CONFIG.conversationId) throw new Error("conversationId is required.");
+        const communicationId=CONFIG.communicationId || CONFIG.agentCommunicationId;
+        if (!communicationId) throw new Error("communicationId is required.");
+        const messageText=action === "HOLD" ? CONFIG.holdMessageText : CONFIG.resumeMessageText;
+        if (!messageText) throw new Error(action + " message text is required.");
+        const endpoint=API_BASE + "/api/v2/conversations/messages/" + encodeURIComponent(CONFIG.conversationId) + "/communications/" + encodeURIComponent(communicationId) + "/messages";
+        const response=await fetch(endpoint, { method:"POST", headers:{ "Authorization":"Bearer " + token, "Content-Type":"application/json" }, body:JSON.stringify({ textBody:messageText }) });
+        const text=await response.text();
+        if (!response.ok) throw new Error("Send " + action + " failed. HTTP " + response.status + " - " + text);
+        return text;
+      }
+      async function processExternalAction(){
+        if (CONFIG.externalAction !== "HOLD" && CONFIG.externalAction !== "RESUME") return;
+        const previous=getActionState();
+        if (previous && (previous.status === "DONE" || previous.status === "IN_PROGRESS")) return;
+        processingAction=true;
+        processingLabel=CONFIG.externalAction === "HOLD" ? "Sending Hold" : "Sending Resume";
+        render();
+        setActionState("IN_PROGRESS", "Started");
+        try {
+          if (CONFIG.externalAction === "RESUME") {
+            const rec=findRecord();
+            if (rec && rec.key) {
+              const records=readRecords();
+              if (records[rec.key]) { records[rec.key].status="RESUME_IN_PROGRESS"; records[rec.key].resumeSent=true; records[rec.key].resumeAttemptTimeUtc=new Date().toISOString(); writeRecords(records); broadcast("RESUME_IN_PROGRESS", records[rec.key]); }
+            }
+          }
+          await sendMessage(CONFIG.externalAction);
+          if (CONFIG.externalAction === "HOLD") saveHoldRecord();
+          else removeHoldRecord("EXTERNAL_RESUME");
+          setActionState("DONE", "OK");
+        } catch (err) {
+          try { localStorage.removeItem(buildActionKey()); } catch(_) {}
+          processingLabel="Action failed";
+          setCls("exceeded");
+          setText("icon","⚠️");
+          setText("label", safe(err.message || err).slice(0, 40));
+          setText("time","--:--");
+          setProgress(100);
+          setTimeout(function(){ processingAction=false; render(); }, 2500);
+          return;
+        }
+        processingAction=false;
+        processingLabel="";
+        render();
+      }
+
       function mmss(sec){ sec=Math.max(0, Math.floor(Number(sec)||0)); const m=String(Math.floor(sec/60)).padStart(2,"0"); const s=String(sec%60).padStart(2,"0"); return m+":"+s; }
-      function setCls(cls){ document.getElementById("widget").className="timer-widget "+cls; }
+      function setCls(cls){ const w=document.getElementById("widget"); if(w) w.className="timer-widget "+cls; }
       function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent=txt; }
       function setProgress(pct){ const fill=document.getElementById("fill"); if(fill) fill.style.width=Math.max(0, Math.min(100, pct || 0)) + "%"; }
       function playBeepOnce(){
@@ -160,11 +271,8 @@
           gain.gain.setValueAtTime(0.001, ctx.currentTime);
           gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.04);
           gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.6);
-          setTimeout(() => { try { ctx.close(); } catch(_){} }, 900);
+          osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + Math.max(0.2, CONFIG.alertSoundDurationMs / 1000));
+          setTimeout(() => { try { ctx.close(); } catch(_){} }, CONFIG.alertSoundDurationMs + 300);
         } catch(_) {}
       }
       function blinkTitleOnce(){
@@ -173,41 +281,38 @@
           if (titleBlinkInterval) return;
           let show = true;
           document.title = "⚠️ Hold Time Reached";
-          titleBlinkInterval = setInterval(() => {
-            show = !show;
-            document.title = show ? "⚠️ Hold Time Reached" : ORIGINAL_TITLE;
-          }, 900);
-          setTimeout(() => {
-            if (titleBlinkInterval) {
-              clearInterval(titleBlinkInterval);
-              titleBlinkInterval = null;
-            }
-            document.title = ORIGINAL_TITLE;
-          }, CONFIG.titleBlinkDurationMs);
+          titleBlinkInterval = setInterval(() => { show = !show; document.title = show ? "⚠️ Hold Time Reached" : ORIGINAL_TITLE; }, 900);
+          setTimeout(() => { if (titleBlinkInterval) { clearInterval(titleBlinkInterval); titleBlinkInterval = null; } document.title = ORIGINAL_TITLE; }, CONFIG.titleBlinkDurationMs);
+        } catch(_) {}
+      }
+
+      function startWidgetBlinkOnce(record){
+        if (!CONFIG.alertBlinkEnabled) return;
+        try {
+          const widget=document.getElementById("widget");
+          if (!widget) return;
+          const key="GCB_HOLD_WIDGET_BLINK_" + sanitizeKey((record && record.key) || getCentralHoldKey());
+          if (widget.dataset.blinkKey === key) return;
+          widget.dataset.blinkKey = key;
+          widget.classList.add("blinking");
+          setTimeout(() => { try { widget.classList.remove("blinking"); } catch(_){} }, CONFIG.alertBlinkDurationMs);
         } catch(_) {}
       }
       function notifyOnce(record){
-        const key="GCB_HOLD_ALERT_SENT_" + sanitizeKey(record.key || getCentralHoldKey());
+        const key="GCB_HOLD_ALERT_SENT_" + sanitizeKey((record && record.key) || getCentralHoldKey());
         if (localStorage.getItem(key)) return;
         try { localStorage.setItem(key, new Date().toISOString()); } catch(_) {}
-        playBeepOnce();
-        blinkTitleOnce();
+        playBeepOnce(); blinkTitleOnce();
         if (!CONFIG.browserNotificationEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
-        try {
-          const note = new Notification("SIVAKUMAR - RAKBANK", { body:"Maximum hold duration reached. Please click Resume to continue the chat.", tag:key, requireInteraction:false });
-          setTimeout(() => { try { note.close(); } catch(_){} }, 12000);
-        } catch(_) {}
+        try { const note = new Notification("SIVAKUMAR - RAKBANK", { body:"Maximum hold duration reached. Please click Resume to continue the chat.", tag:key, requireInteraction:false }); setTimeout(() => { try { note.close(); } catch(_){} }, CONFIG.notificationAutoCloseMs); } catch(_) {}
       }
       function render(){
+        if (processingAction) {
+          setCls("processing"); setText("icon","⏳"); setText("label", processingLabel || "Processing"); setText("sub","Hold/Resume action is being sent."); setText("time","..."); setProgress(20); return;
+        }
         const record=findRecord();
         if (!record) {
-          setCls("idle");
-          setText("icon","⏱️");
-          setText("label","No active hold");
-          setText("sub","Timer will appear when Hold is active.");
-          setText("time","00:00");
-          setProgress(0);
-          return;
+          setCls("idle"); setText("icon","⏱️"); setText("label","No active hold"); setText("sub","Timer will appear when Hold is active."); setText("time","00:00"); setProgress(0); return;
         }
         const status=String(record.status || "");
         const max=Math.max(1, Number(record.maxHoldTime || CONFIG.maxHoldTime || 30));
@@ -219,32 +324,20 @@
         setProgress(pct);
 
         if (status === "HOLD_EXCEEDED" || rawElapsed >= max) {
-          setCls("exceeded");
-          setText("icon","⚠️");
-          setText("label","Time limit reached");
-          setText("sub","Please click Resume to continue the chat.");
-          setText("time", mmss(0));                 // countdown reaches zero and stays there.
-          notifyOnce(record);
-          return;
+          markHoldExceeded(record);
+          setCls("exceeded"); setText("icon","⚠️"); setText("label","Time limit reached"); setText("sub","Please click Resume to continue the chat."); setText("time", mmss(0)); startWidgetBlinkOnce(record); notifyOnce(record); return;
         }
         if (status === "RESUME_IN_PROGRESS") {
-          setCls("warning");
-          setText("icon","⏳");
-          setText("label","Resume in progress");
-          setText("sub","Please wait while Resume is being sent.");
-          setText("time", mmss(cappedRemaining));
-          return;
+          setCls("warning"); setText("icon","⏳"); setText("label","Resume in progress"); setText("sub","Please wait while Resume is being sent."); setText("time", mmss(cappedRemaining)); return;
         }
         setCls(remaining <= 15 ? "warning" : "active");
-        setText("icon","🎧");
-        setText("label","Customer on hold");
-        setText("sub","Remaining " + mmss(cappedRemaining) + " / Max " + mmss(max) + " · Manual Resume required");
-        setText("time", mmss(cappedRemaining));
+        setText("icon","🎧"); setText("label","Customer on hold"); setText("sub","Remaining " + mmss(cappedRemaining) + " / Max " + mmss(max) + " · Manual Resume required"); setText("time", mmss(cappedRemaining));
       }
       render();
       setInterval(render, 1000);
       window.addEventListener("storage", e => { if (e && e.key === GCB_ACTIVE_HOLDS_KEY) render(); });
       try { if (typeof BroadcastChannel !== "undefined") { const ch=new BroadcastChannel(GCB_HOLD_CHANNEL); ch.onmessage=render; } } catch(_) {}
+      setTimeout(processExternalAction, 50);
     })();
   </script>
 </body>

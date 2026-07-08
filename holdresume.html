@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.7.2.19</title>
+  <title>Agent Hold Summary v1.7.2.20</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -696,14 +696,14 @@
   <script src="./js/gcb-debug.js"></script>
   <script>
     /************************************************************
-     * HOLD RESUME PAGE - v1.7.2.19
+     * HOLD RESUME PAGE - v1.7.2.20
      * Uses existing Genesys client-side send-message approach.
      * v1.7.2.9 release note:
      * - Browser notification/taskbar attention kept as optional best-effort alert.
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.19";
+    const HR_VERSION = "v1.7.2.20";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -2295,6 +2295,27 @@
       return true;
     }
 
+
+    let summaryRefreshFromTimerHandle = null;
+    function scheduleSummaryRefreshFromTimer(source) {
+      try {
+        if (summaryRefreshFromTimerHandle) clearTimeout(summaryRefreshFromTimerHandle);
+        summaryRefreshFromTimerHandle = setTimeout(async function () {
+          try {
+            applyVisibleTimerFromCentralRecord(source || "TIMER_ACTION");
+            if (getAccessToken()) {
+              await refreshHoldSummary(false);
+              setStatus("Ready.", "success");
+              hideStatusSoon();
+              addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION", safeString(source));
+            }
+          } catch (err) {
+            addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION_FAILED", err && err.message ? err.message : String(err));
+          }
+        }, 1500);
+      } catch (_) {}
+    }
+
     function startVisibleTimerSync() {
       setInterval(function () {
         applyVisibleTimerFromCentralRecord("INTERVAL");
@@ -2303,6 +2324,7 @@
       window.addEventListener("storage", function (event) {
         if (event && (event.key === GCB_ACTIVE_HOLDS_KEY || event.key === getTimerStateKey())) {
           applyVisibleTimerFromCentralRecord("STORAGE");
+          if (event.key === GCB_ACTIVE_HOLDS_KEY) scheduleSummaryRefreshFromTimer("STORAGE_TIMER_ACTION");
         }
       });
 
@@ -2311,6 +2333,7 @@
           const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
           channel.onmessage = function () {
             applyVisibleTimerFromCentralRecord("BROADCAST");
+            scheduleSummaryRefreshFromTimer("BROADCAST_TIMER_ACTION");
           };
         }
       } catch (_) {}
@@ -2684,6 +2707,7 @@
         if (event && event.key === GCB_ACTIVE_HOLDS_KEY) {
           applyCentralAutoResumeIfPresent();
           applyVisibleTimerFromCentralRecord("STORAGE_CENTRAL");
+          scheduleSummaryRefreshFromTimer("STORAGE_CENTRAL_TIMER_ACTION");
         }
       });
       try {
@@ -2692,6 +2716,7 @@
           channel.onmessage = function () {
             applyCentralAutoResumeIfPresent();
             applyVisibleTimerFromCentralRecord("BROADCAST_CENTRAL");
+            scheduleSummaryRefreshFromTimer("BROADCAST_CENTRAL_TIMER_ACTION");
           };
         }
       } catch (_) {}

@@ -1,21 +1,59 @@
-# GCB v1.7.2.19 - Feedback Fixes
+# GCB v1.7.2.21 - HoldTimer Blink Defaults
 
-This package is based on v1.7.2.18 and includes the latest merged HoldResume design plus the following fixes:
+This package keeps the latest action split:
 
-1. `index.html`
-   - Build label updated from v1.7.2.3 to v1.7.2.19.
-   - Central hold monitor now ignores hold records from other conversations.
-   - Prevents a new chat from showing an old `Maximum hold duration reached` Hold/Resume status.
+- `holdtimer.html` is the Hold/Resume action processor, timer widget, sound/browser notification owner, and timer-box blink/highlight owner.
+- `holdresume.html` is the Agent Hold Summary/details page with long visual alert/banner only.
 
-2. `holdtimer.html`
-   - Timer display changed from elapsed count-up to countdown.
-   - Shows `00:30 -> 00:00` when `maxHoldTime=30`.
-   - At max time, shows `Time limit reached` and stays at `00:00`.
-   - Sound, browser notification, and title/taskbar attention remain owned by this page.
+## Key changes in v1.7.2.21
 
-3. `holdresume.html`
-   - On Resume, duration warning blink is cleared.
-   - Count-limit alerts remain calculated separately.
-   - Merged Hold Summary + Hold/Resume action behavior is retained.
+- Added blink/highlight on `holdtimer.html` when max hold time is reached.
+- Sound, browser notification, taskbar/title blink, notification auto-close, alert blink duration, and sound duration are now defaults inside `holdtimer.html`.
+- Agent Script no longer needs to pass sound/notification/blink-duration parameters to `holdtimer.html`.
+- Keep passing only functional parameters: messages, maxHoldAttempts, maxHoldTime, autoResumeEnabled, compact, externalAction, requestId.
 
-Recommended cache version: `v=172219`.
+## Cache version
+
+Use `v=172221`.
+
+## Final HoldTimer Base URL
+
+```javascript
+AFT_URL_HoldTimer_Base_URL =
+{{AFT_URL_GCB_Root_URL}} +
+"holdtimer.html?" +
+"v=" + {{AFT_GCB_Version}} +
+{{AFT_URL_GCB_Common_Params}} +
+"&holdMessageText=Gen-Hold-32" +
+"&resumeMessageText=Gen-Resume-33" +
+"&maxHoldAttempts=3" +
+"&maxHoldTime=30" +
+"&autoResumeEnabled=false" +
+"&compact=true"
+```
+
+## Initial timer page URL
+
+```javascript
+AFT_URL_HoldTimer_Page_URL =
+{{AFT_URL_HoldTimer_Base_URL}} +
+"&externalAction=NONE"
+```
+
+## Hold click
+
+```javascript
+AFT_URL_HoldTimer_Page_URL =
+{{AFT_URL_HoldTimer_Base_URL}} +
+"&externalAction=HOLD" +
+"&requestId=" + {{Scripter.Interaction ID}} + "-HOLD-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
+```
+
+## Resume click
+
+```javascript
+AFT_URL_HoldTimer_Page_URL =
+{{AFT_URL_HoldTimer_Base_URL}} +
+"&externalAction=RESUME" +
+"&requestId=" + {{Scripter.Interaction ID}} + "-RESUME-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
+```
