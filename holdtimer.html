@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.21</title>
+  <title>GCB Hold Timer v1.7.2.22</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -73,7 +73,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.21";
+      const VERSION = "v1.7.2.22";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const ACTION_STATE_PREFIX = "GCB_HT_EXTERNAL_ACTION_";
@@ -292,10 +292,24 @@
           const widget=document.getElementById("widget");
           if (!widget) return;
           const key="GCB_HOLD_WIDGET_BLINK_" + sanitizeKey((record && record.key) || getCentralHoldKey());
-          if (widget.dataset.blinkKey === key) return;
+          // setCls("exceeded") runs every second and can remove the blinking class.
+          // Keep the blink class active for the configured duration even during re-render.
+          const now = Date.now();
+          const activeUntil = Number(widget.dataset.blinkUntil || 0);
+          if (widget.dataset.blinkKey === key && activeUntil > now) {
+            widget.classList.add("blinking");
+            return;
+          }
           widget.dataset.blinkKey = key;
+          widget.dataset.blinkUntil = String(now + CONFIG.alertBlinkDurationMs);
           widget.classList.add("blinking");
-          setTimeout(() => { try { widget.classList.remove("blinking"); } catch(_){} }, CONFIG.alertBlinkDurationMs);
+          setTimeout(() => {
+            try {
+              if (Date.now() >= Number(widget.dataset.blinkUntil || 0)) {
+                widget.classList.remove("blinking");
+              }
+            } catch(_){}
+          }, CONFIG.alertBlinkDurationMs);
         } catch(_) {}
       }
       function notifyOnce(record){
