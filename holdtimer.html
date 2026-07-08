@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.22</title>
+  <title>GCB Hold Timer v1.7.2.24</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -31,7 +31,15 @@
     .timer-widget.warning { border-color:#f59e0b; background:#fffbeb; }
     .timer-widget.processing { border-color:#38bdf8; background:#eff6ff; }
     .timer-widget.exceeded { border-color:#ef4444; background:#fef2f2; }
-    .timer-widget.exceeded.blinking { animation:pulse 1s infinite; }
+    .timer-widget.exceeded.blinking {
+      animation:timerBlinkBox .75s infinite;
+      border-width:2px;
+    }
+    .timer-widget.exceeded.blinking .label,
+    .timer-widget.exceeded.blinking .time,
+    .timer-widget.exceeded.blinking .icon {
+      animation:timerBlinkText .75s infinite;
+    }
     .idle .time { color:var(--muted); }
     .warning .time { color:var(--warn); }
     .processing .time { color:var(--blueText); }
@@ -39,7 +47,14 @@
     .warning .fill { background:#f59e0b; }
     .processing .fill { background:#38bdf8; width:20% !important; }
     .exceeded .fill { background:#ef4444; width:100% !important; }
-    @keyframes pulse { 0%,100%{box-shadow:0 0 0 rgba(239,68,68,0)} 50%{box-shadow:0 0 0 3px rgba(239,68,68,.16)} }
+    @keyframes timerBlinkBox {
+      0%,100% { background:#fef2f2; border-color:#ef4444; box-shadow:0 0 0 rgba(239,68,68,0); }
+      50% { background:#fff7ed; border-color:#f97316; box-shadow:0 0 0 3px rgba(239,68,68,.25); }
+    }
+    @keyframes timerBlinkText {
+      0%,100% { opacity:1; color:var(--danger); }
+      50% { opacity:.15; color:#f97316; }
+    }
 
     body.compact .timer-widget {
       width:200px; min-width:200px; max-width:200px; height:36px; min-height:36px; max-height:36px;
@@ -73,7 +88,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.22";
+      const VERSION = "v1.7.2.24";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const ACTION_STATE_PREFIX = "GCB_HT_EXTERNAL_ACTION_";
@@ -286,30 +301,15 @@
         } catch(_) {}
       }
 
-      function startWidgetBlinkOnce(record){
+      function startWidgetBlinkUntilResume(record){
         if (!CONFIG.alertBlinkEnabled) return;
         try {
           const widget=document.getElementById("widget");
           if (!widget) return;
-          const key="GCB_HOLD_WIDGET_BLINK_" + sanitizeKey((record && record.key) || getCentralHoldKey());
-          // setCls("exceeded") runs every second and can remove the blinking class.
-          // Keep the blink class active for the configured duration even during re-render.
-          const now = Date.now();
-          const activeUntil = Number(widget.dataset.blinkUntil || 0);
-          if (widget.dataset.blinkKey === key && activeUntil > now) {
-            widget.classList.add("blinking");
-            return;
-          }
-          widget.dataset.blinkKey = key;
-          widget.dataset.blinkUntil = String(now + CONFIG.alertBlinkDurationMs);
+          // v1.7.2.24: keep Time limit reached blink/highlight active until Resume clears the active hold record.
+          // setCls("exceeded") runs every second and replaces className, so re-add blinking every render.
+          widget.dataset.blinkKey = "GCB_HOLD_WIDGET_BLINK_" + sanitizeKey((record && record.key) || getCentralHoldKey());
           widget.classList.add("blinking");
-          setTimeout(() => {
-            try {
-              if (Date.now() >= Number(widget.dataset.blinkUntil || 0)) {
-                widget.classList.remove("blinking");
-              }
-            } catch(_){}
-          }, CONFIG.alertBlinkDurationMs);
         } catch(_) {}
       }
       function notifyOnce(record){
@@ -339,7 +339,7 @@
 
         if (status === "HOLD_EXCEEDED" || rawElapsed >= max) {
           markHoldExceeded(record);
-          setCls("exceeded"); setText("icon","⚠️"); setText("label","Time limit reached"); setText("sub","Please click Resume to continue the chat."); setText("time", mmss(0)); startWidgetBlinkOnce(record); notifyOnce(record); return;
+          setCls("exceeded"); setText("icon","⚠️"); setText("label","Time limit reached"); setText("sub","Please click Resume to continue the chat."); setText("time", mmss(0)); startWidgetBlinkUntilResume(record); notifyOnce(record); return;
         }
         if (status === "RESUME_IN_PROGRESS") {
           setCls("warning"); setText("icon","⏳"); setText("label","Resume in progress"); setText("sub","Please wait while Resume is being sent."); setText("time", mmss(cappedRemaining)); return;
