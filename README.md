@@ -1,77 +1,41 @@
-# GCB v1.7.2.24 - HoldTimer Visible Blink Fix
+# RAKBANK Genesys Context Bridge (GCB)
 
-# GCB v1.7.2.24 - HoldTimer Blink Defaults
+Updated package: v1.7.2.22-chatmonitor-dashboard
 
-This package keeps the latest action split:
+## Main changes
 
-- `holdtimer.html` is the Hold/Resume action processor, timer widget, sound/browser notification owner, and timer-box blink/highlight owner.
-- `holdresume.html` is the Agent Hold Summary/details page with long visual alert/banner only.
+- Removed SendMsg page and related files:
+  - sendmsg.html
+  - js/send-message.js
+  - css/send-message.css
+- Added Chat Monitor as package page:
+  - chatmonitor.html
+  - js/chatmonitor.js
+  - css/chatmonitor.css
+- index.html is now the common OAuth/MFA callback and router page.
+- Shared OAuth uses index.html as the redirect URI, then restores the original target page.
 
-## Key changes in v1.7.2.24
+- Improved ChatMonitor support/admin dashboard:
+  - OAuth, WebSocket, subscription, loaded-from/router, last conversation, last sent, last skip reason, and last error summary cards.
+  - Raw log filters for All / OK / WARN / ERROR / SENT / SKIPPED.
+  - Log count summary to make support checks easier without browser developer tools.
 
-- Added blink/highlight on `holdtimer.html` when max hold time is reached.
-- Sound, browser notification, taskbar/title blink, notification auto-close, alert blink duration, and sound duration are now defaults inside `holdtimer.html`.
-- Agent Script no longer needs to pass sound/notification/blink-duration parameters to `holdtimer.html`.
-- Keep passing only functional parameters: messages, maxHoldAttempts, maxHoldTime, autoResumeEnabled, compact, externalAction, requestId.
+## Recommended Genesys URLs
 
-## Cache version
+Use the same index.html URL for OAuth, Client App and Interaction Widget routing:
 
-Use `v=172224`.
-
-## Final HoldTimer Base URL
-
-```javascript
-AFT_URL_HoldTimer_Base_URL =
-{{AFT_URL_GCB_Root_URL}} +
-"holdtimer.html?" +
-"v=" + {{AFT_GCB_Version}} +
-{{AFT_URL_GCB_Common_Params}} +
-"&holdMessageText=Gen-Hold-32" +
-"&resumeMessageText=Gen-Resume-33" +
-"&maxHoldAttempts=3" +
-"&maxHoldTime=30" +
-"&autoResumeEnabled=false" +
-"&compact=true"
+```text
+index.html?page=chatmonitor&clientId=<OAuthClientId>&region=mypurecloud.ie&source=ClientApp
+index.html?page=holdresume&clientId=<OAuthClientId>&region=mypurecloud.ie
+index.html?page=holdtimer&clientId=<OAuthClientId>&region=mypurecloud.ie
+index.html?page=prospects&clientId=<OAuthClientId>&region=mypurecloud.ie
 ```
 
-## Initial timer page URL
+## Pages
 
-```javascript
-AFT_URL_HoldTimer_Page_URL =
-{{AFT_URL_HoldTimer_Base_URL}} +
-"&externalAction=NONE"
-```
+- index.html - OAuth/MFA and routing only
+- chatmonitor.html - AFT GCB Conversation Monitor
+- holdresume.html - Hold/Resume page
+- holdtimer.html - Hold Timer page
+- prospects.html - Prospects page
 
-## Hold click
-
-```javascript
-AFT_URL_HoldTimer_Page_URL =
-{{AFT_URL_HoldTimer_Base_URL}} +
-"&externalAction=HOLD" +
-"&requestId=" + {{Scripter.Interaction ID}} + "-HOLD-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
-```
-
-## Resume click
-
-```javascript
-AFT_URL_HoldTimer_Page_URL =
-{{AFT_URL_HoldTimer_Base_URL}} +
-"&externalAction=RESUME" +
-"&requestId=" + {{Scripter.Interaction ID}} + "-RESUME-" + {{Scripter.Agent Communication ID}} + "-" + {{Scripter.Agent Call Duration}}
-```
-
-
-## v1.7.2.24
-- Fixed holdtimer blinking issue: repeated render was removing the blinking CSS class immediately after Time limit reached.
-- Cache version: v=172224
-
-
-## v1.7.2.24 change
-- holdtimer.html: made Time limit reached blink clearly by animating timer widget border/background and label/time text.
-- No Agent Script URL parameter change except cache version v=172224.
-
-
-## v1.7.2.24 update
-- holdtimer.html Time limit reached blink/highlight now continues until Resume clears the active hold record.
-- No new query parameters required.
-- Use cache version v=172224.

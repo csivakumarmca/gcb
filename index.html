@@ -34,7 +34,7 @@
 
     <table class="status-table" aria-label="GCB status summary">
       <tr><td>OAuth</td><td id="lineOauth"><span class="status-pending">Pending</span></td></tr>
-      <tr><td>Send Greeting</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
+      <tr><td>Chat Monitor</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Hold / Resume</td><td id="lineHoldResume"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Prospects</td><td id="lineProspects"><span class="status-pending">Not run</span></td></tr>
     </table>
@@ -58,7 +58,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.20";
+      const ROUTER_VERSION = "v1.7.2.22-chatmonitor-dashboard";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -70,14 +70,16 @@
       let centralHoldMonitorBusy = false;
 
       const MODULE_MAP = {
-        "send-message": "sendmsg.html",
-        "sendmessage": "sendmsg.html",
-        "sendmsg": "sendmsg.html",
-        "message": "sendmsg.html",
-        "greeting": "sendmsg.html",
+        "chatmonitor": "chatmonitor.html",
+        "chat-monitor": "chatmonitor.html",
+        "monitor": "chatmonitor.html",
+        "conversation-monitor": "chatmonitor.html",
         "hold-resume": "holdresume.html",
         "holdresume": "holdresume.html",
         "hold": "holdresume.html",
+        "holdtimer": "holdtimer.html",
+        "hold-timer": "holdtimer.html",
+        "timer": "holdtimer.html",
         "prospects": "prospects.html",
         "prospect": "prospects.html"
       };
@@ -328,7 +330,7 @@
           ["Region", Auth.getRegion()],
           ["Client", mask(Auth.getClientId())],
           ["Conv", mask(params.get("conversationId") || params.get("gcConversationId"))],
-          ["Module", params.get("module") || "None"]
+          ["Page", params.get("page") || params.get("module") || "None"]
         ];
         if (user) rows.push(["User", C.safeString(user.name || user.email || user.id) || "Validated"]);
         rows.forEach(function (r) {
@@ -372,17 +374,26 @@
         setInterval(renderCentralLogs, 5000);
       }
 
-      function getModuleName() { return C.safeString(C.getParam("module")).toLowerCase(); }
+      function getModuleName() { return C.safeString(C.getParam("page") || C.getParam("module")).toLowerCase(); }
+
+      function buildTargetUrl(moduleFile) {
+        const params = new URLSearchParams(window.location.search || "");
+        params.delete("code");
+        params.delete("state");
+        params.delete("page");
+        params.delete("module");
+        params.set("routedFrom", "index");
+        const query = params.toString();
+        return moduleFile + (query ? "?" + query : "");
+      }
 
       async function loadModule(moduleName) {
         const moduleFile = MODULE_MAP[moduleName];
-        if (!moduleFile) throw new Error("Invalid GCB module: " + moduleName);
-        setStatus("OAuth success. Loading " + moduleName + "...", "success");
-        const response = await fetch(moduleFile, { cache: "no-store" });
-        if (!response.ok) throw new Error("Unable to load " + moduleFile + ". HTTP " + response.status);
-        const html = await response.text();
-        debugLog("INFO", "MODULE_LOAD_OK", moduleName + " loaded from " + moduleFile);
-        document.open(); document.write(html); document.close();
+        if (!moduleFile) throw new Error("Invalid GCB page/module: " + moduleName);
+        const targetUrl = buildTargetUrl(moduleFile);
+        setStatus("OAuth success. Opening " + moduleName + "...", "success");
+        debugLog("INFO", "ROUTE_TO_PAGE", moduleName + " -> " + targetUrl);
+        window.location.replace(targetUrl);
       }
 
       async function start() {
@@ -416,8 +427,8 @@
         startCentralHoldMonitor();
         const moduleName = getModuleName();
         if (!moduleName) {
-          setStatus("GCB Ready. OAuth success. No business module selected.", "success");
-          debugLog("INFO", "LANDING_READY", "Index status page loaded. No business module selected.");
+          setStatus("GCB Ready. OAuth success. No business page selected.", "success");
+          debugLog("INFO", "LANDING_READY", "Index status page loaded. No business page selected.");
           return;
         }
         await loadModule(moduleName);

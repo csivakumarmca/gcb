@@ -1,16 +1,31 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
+  "version": "v1.7.2.22-chatmonitor-dashboard",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
+  "oauthRedirectPage": "index.html",
   "pages": {
-    "sendMessage": "send-message.html",
-    "holdResume": "hold-resume.html",
+    "router": "index.html",
+    "chatMonitor": "chatmonitor.html",
+    "holdResume": "holdresume.html",
+    "holdTimer": "holdtimer.html",
     "prospects": "prospects.html"
   },
+  "recommendedUrls": {
+    "clientApp": "index.html?page=chatmonitor&clientId=<OAuthClientId>&region=mypurecloud.ie&source=ClientApp",
+    "interactionWidgetHoldResume": "index.html?page=holdresume&clientId=<OAuthClientId>&region=mypurecloud.ie",
+    "interactionWidgetHoldTimer": "index.html?page=holdtimer&clientId=<OAuthClientId>&region=mypurecloud.ie",
+    "interactionWidgetProspects": "index.html?page=prospects&clientId=<OAuthClientId>&region=mypurecloud.ie"
+  },
+  "removed": [
+    "sendmsg.html",
+    "js/send-message.js",
+    "css/send-message.css"
+  ],
   "notes": [
-    "send-message.html handles Greeting, Agent Joined and Supervisor Joined only.",
-    "Hold timer broadcast removed from send-message.js.",
-    "Hold/Resume timer and hold summary remain in hold-resume.html.",
-    "Prospects functionality remains in prospects.html."
+    "SendMsg page removed because Agent Joined/Greeting send logic is now handled by Chat Monitor.",
+    "index.html is the single OAuth/MFA callback and router page.",
+    "Use index.html?page=<target> in Genesys Client App and Interaction Widget URLs to avoid OAuth redirect loss.",
+    "chatmonitor.html is split into css/chatmonitor.css and js/chatmonitor.js."
   ]
 }

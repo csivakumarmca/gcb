@@ -1,361 +1,17 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Prospects v3</title>
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-
-      html,
-      body {
-        overflow: hidden;
-      }
-
-      body {
-        margin: 0;
-        padding: 8px;
-        background: #ffffff;
-        color: #143242;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-        font-size: 12px;
-      }
-
-      .prospect-layout {
-        width: 100%;
-      }
-
-      .interaction-row {
-        display: grid;
-        grid-template-columns: 145px 1fr;
-        gap: 14px;
-        align-items: center;
-        margin-bottom: 14px;
-      }
-
-      .field-label,
-      label.field-label {
-        display: block;
-        color: #006d8f;
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: .2px;
-        white-space: nowrap;
-      }
-
-      select,
-      .search-input,
-      textarea {
-        width: 100%;
-        border: 1px solid #c8d6df;
-        border-radius: 4px;
-        background: #ffffff;
-        color: #143242;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-        font-size: 12px;
-      }
-
-      select {
-        min-height: 38px;
-        padding: 7px 34px 7px 12px;
-      }
-
-      .panel-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 14px;
-      }
-
-      .list-panel {
-        overflow: hidden;
-        border: 1px solid #c8d6df;
-        border-radius: 0 0 6px 6px;
-        background: #f8fbfd;
-      }
-
-      .panel-title {
-        min-height: 37px;
-        padding: 10px 12px 8px;
-        background: #007d96;
-        color: #ffffff;
-        font-size: 14px;
-        font-weight: 700;
-        letter-spacing: .2px;
-      }
-
-      .list-body {
-        padding: 13px 11px 14px;
-      }
-
-      .search-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 11px;
-      }
-
-      .search-row .search-input {
-        margin-bottom: 0;
-      }
-
-      .search-input {
-        min-height: 34px;
-        margin-bottom: 11px;
-        padding: 8px 10px;
-      }
-
-      .reset-selection-button {
-        flex: 0 0 auto;
-        min-height: 34px;
-        border: 1px solid #9db2bf;
-        border-radius: 4px;
-        padding: 7px 11px;
-        background: #ffffff;
-        color: #006d8f;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-        font-size: 12px;
-        font-weight: 700;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-
-      .reset-selection-button:hover {
-        background: #e4f6fb;
-      }
-
-      .search-input::placeholder,
-      textarea::placeholder {
-        color: #60798a;
-      }
-
-      .options {
-        height: 204px;
-        overflow: auto;
-        padding-right: 8px;
-      }
-
-      .option {
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        min-height: 31px;
-        padding: 4px 7px;
-        border-radius: 4px;
-        color: #143242;
-        font-size: 12px;
-        line-height: 1.2;
-        white-space: nowrap;
-      }
-
-      .option:has(input:checked) {
-        background: #e4f6fb;
-      }
-
-      .option input {
-        appearance: none;
-        flex: 0 0 auto;
-        width: 13px;
-        height: 13px;
-        margin: 0;
-        border: 1px solid #9db2bf;
-        background: #ffffff;
-      }
-
-      .option input:checked {
-        position: relative;
-      }
-
-      .option input:checked::after {
-        content: "";
-        position: absolute;
-        left: 3px;
-        top: -3px;
-        width: 5px;
-        height: 12px;
-        border: solid #0f566b;
-        border-width: 0 2px 2px 0;
-        transform: rotate(42deg);
-      }
-
-      #outcomeOptions .option {
-        cursor: pointer;
-      }
-
-      .remarks-wrap {
-        margin-top: 14px;
-      }
-
-      .remarks-wrap .field-label {
-        margin-bottom: 7px;
-      }
-
-      textarea {
-        display: block;
-        min-height: 62px;
-        padding: 11px 12px;
-        resize: vertical;
-      }
-
-      .submit-row {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 14px;
-        margin-top: 16px;
-      }
-
-      .submit-button {
-        min-width: 132px;
-        min-height: 35px;
-        border: 0;
-        border-radius: 6px;
-        background: #007d96;
-        color: #ffffff;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-        font-size: 13px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-
-      .submit-button:hover,
-      .submit-button:focus {
-        background: #006d8f;
-      }
-
-      .submit-button:disabled {
-        background: #8fb8c3;
-        cursor: not-allowed;
-      }
-
-      .validation-message {
-        min-height: 16px;
-        color: #d71920;
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      .runtime-row {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        margin-top: 10px;
-      }
-
-      .runtime-button {
-        min-height: 28px;
-        border: 1px solid #8f8f8f;
-        border-radius: 4px;
-        padding: 5px 12px;
-        background: #eeeeee;
-        color: #143242;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-        font-size: 12px;
-        font-weight: 700;
-        cursor: pointer;
-      }
-
-      #authRow {
-        display: none !important;
-      }
-
-      .runtime-status {
-        min-height: 16px;
-        color: #006d8f;
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      .debug-box {
-        margin-top: 10px;
-        border: 1px dashed #9db2bf;
-        padding: 8px 10px;
-        background: #f8fbfd;
-        color: #143242;
-        font-family: Consolas, "Courier New", monospace;
-        font-size: 11px;
-        line-height: 1.5;
-        white-space: pre-wrap;
-      }
-
-      .debug-title {
-        margin-bottom: 4px;
-        color: #006d8f;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-        font-size: 12px;
-        font-weight: 700;
-      }
-    </style>
-  </head>
-  <body>
-    <main class="prospect-layout">
-      <div class="interaction-row">
-        <label class="field-label" for="interactionType">Type of Interaction</label>
-        <select id="interactionType">
-          <option value="">---Select---</option>
-        </select>
-      </div>
-
-      <section class="panel-grid">
-        <article class="list-panel" id="contactPanel">
-          <div class="panel-title">Contact Reason</div>
-          <div class="list-body">
-            <div class="search-row">
-              <input class="search-input" placeholder="Type to search Contact Reason" />
-              <button class="reset-selection-button" id="resetContactReasonButton" type="button">Reset</button>
-            </div>
-            <div class="options" id="contactOptions"></div>
-          </div>
-        </article>
-
-        <article class="list-panel" id="outcomePanel">
-          <div class="panel-title">Interaction Outcome</div>
-          <div class="list-body">
-            <input class="search-input" placeholder="Type to search Interaction Outcome" />
-            <div class="options" id="outcomeOptions"></div>
-          </div>
-        </article>
-      </section>
-
-      <section class="remarks-wrap">
-        <label class="field-label" for="remarks">Remarks</label>
-        <textarea id="remarks" placeholder="Type remarks here..."></textarea>
-      </section>
-
-      <div class="submit-row">
-        <button class="submit-button" type="button">Submit</button>
-        <span class="validation-message" id="validationMessage" role="status"></span>
-      </div>
-      <div class="runtime-row" id="authRow" hidden>
-        <button class="runtime-button" id="loginButton" type="button">Login / Refresh Token</button>
-      </div>
-      <div class="runtime-row" id="runtimeStatusRow" hidden>
-        <span class="runtime-status" id="runtimeStatus" role="status"></span>
-      </div>
-      <div class="debug-box" id="debugBox" hidden>
-        <div class="debug-title">Debug Parameters</div>
-        <div id="debugParams"></div>
-      </div>
-    </main>
-
-    <script src="./js/gcb-debug.js"></script>
-  <script>
-      const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
+const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const DEFAULT_GENESYS_REGION = "mypurecloud.ie";
-      const DEFAULT_APP_VERSION = "Prospects_v3.12";
-      const STORAGE_CLIENT_ID = "gcb_clientId";
-      const STORAGE_REGION = "gcb_region";
-      const STORAGE_PROSPECTS_ORIGINAL_QUERY = "gcb_prospects_original_query";
-      const REDIRECT_URI = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, "/index.html");
+      const DEFAULT_APP_VERSION = "RakProspects_v3.12";
+      const STORAGE_CLIENT_ID = "rakbank_clientId";
+      const STORAGE_REGION = "rakbank_region";
+      const STORAGE_PROSPECTS_ORIGINAL_QUERY = "rakbank_prospects_original_query";
+      const REDIRECT_URI = window.location.origin + window.location.pathname;
 
       const params = new URLSearchParams(window.location.search);
       const APP_VERSION = getParam("version") || getParam("prospectsVersion") || DEFAULT_APP_VERSION;
-      const DEBUG_PANEL_ENABLED = getBooleanParam("debugPanel", false) || getBooleanParam("pageDebug", false) || getBooleanParam("showPageDebug", false);
+      const DEBUG_PANEL_ENABLED = getBooleanParam("debugPanel", false) || getBooleanParam("showDebug", false) || getBooleanParam("debug", false);
       const AUTO_REFRESH_TOKEN_ENABLED = getBooleanParam("autoRefreshToken", true) || getBooleanParam("autoLogin", false);
-      const STORAGE_PROSPECTS_AUTO_REFRESH_BLOCKED = "gcb_prospects_auto_refresh_blocked";
-      const STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED = "gcb_prospects_load_recovery_attempted";
+      const STORAGE_PROSPECTS_AUTO_REFRESH_BLOCKED = "rakbank_prospects_auto_refresh_blocked";
+      const STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED = "rakbank_prospects_load_recovery_attempted";
       const context = {
         conversationId: getParam("conversationId"),
         communicationId: getParam("communicationId"),
@@ -451,33 +107,6 @@
       const loginButton = document.getElementById("loginButton");
       const submitButton = document.querySelector(".submit-button");
 
-
-
-      function centralStatus(key, stateValue, reason) {
-        try {
-          if (!window.GcbDebug || !window.GcbDebug.setStatus) return;
-          const statusKeyMap = {
-            prospects: "prospects",
-            prospect: "prospects",
-            holdresume: "holdResume",
-            holdResume: "holdResume",
-            sendGreeting: "sendGreeting",
-            sendmsg: "sendGreeting",
-            oauth: "oauth"
-          };
-          const statusKey = statusKeyMap[key] || key;
-          const stateText = String(stateValue || "pending").toLowerCase();
-          const level = stateText === "failed" ? "ERROR" : "INFO";
-          const message = reason || "";
-          window.GcbDebug.setStatus(statusKey, stateText, message);
-          if (window.GcbDebug.log) {
-            window.GcbDebug.log(level, "STATUS_" + String(statusKey).toUpperCase(), message);
-          }
-        } catch (_) {
-          // Central debug must never block Prospects business submit/load.
-        }
-      }
-
       init();
 
       function buildColumnAliases(primaryColumnName, fallbackColumnNames) {
@@ -550,7 +179,7 @@
       }
 
       function applyPageRuntimeSettings() {
-        document.title = `${APP_VERSION} - Prospects`;
+        document.title = `${APP_VERSION} - RAKBANK Prospects`;
         document.body.setAttribute("data-prospects-version", APP_VERSION);
         if (debugBox) debugBox.hidden = !DEBUG_PANEL_ENABLED;
         if (runtimeStatusRow) runtimeStatusRow.hidden = !DEBUG_PANEL_ENABLED;
@@ -671,11 +300,9 @@
           await updateSearchDebugAttribute(token);
           renderDebugParameters();
           setRuntimeStatus("Prospects values loaded.");
-          centralStatus("prospects", "success", "Prospects values loaded.");
         } catch (error) {
           const errorMessage = getErrorMessage(error);
           appendSearchLog("LOAD_ERROR::" + errorMessage);
-          centralStatus("prospects", "failed", errorMessage);
 
           if (shouldRecoverGenesysLogin(error) && AUTO_REFRESH_TOKEN_ENABLED && sessionStorage.getItem(STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED) !== "true") {
             sessionStorage.setItem(STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED, "true");
@@ -1356,14 +983,12 @@
           saveDraft();
           renderDebugParameters();
           setRuntimeStatus("Wrap-up assigned and Prospects submitted successfully.");
-          centralStatus("prospects", "success", "Wrap-up assigned and Prospects submitted successfully.");
         } catch (error) {
           submitButton.disabled = false;
           appendSubmitLog(`ERROR::${getErrorMessage(error)}`);
           if (token) await updateAssignDebugAttribute(token);
           renderDebugParameters();
           setRuntimeStatus("Submit failed: " + getErrorMessage(error), true);
-          centralStatus("prospects", "failed", getErrorMessage(error));
         }
       }
 
@@ -1565,9 +1190,6 @@
         sessionStorage.setItem("pkce_code_verifier", codeVerifier);
         sessionStorage.setItem(STORAGE_CLIENT_ID, OAUTH_CLIENT_ID);
         sessionStorage.setItem(STORAGE_REGION, GENESYS_REGION);
-        sessionStorage.setItem("gcb_gcb_auth_original_url", window.location.href);
-        sessionStorage.setItem("gcb_clientId", OAUTH_CLIENT_ID || "");
-        sessionStorage.setItem("gcb_region", GENESYS_REGION || "");
         sessionStorage.setItem(STORAGE_PROSPECTS_ORIGINAL_QUERY, buildQueryWithoutOAuthCode());
         window.location.href =
           `${LOGIN_BASE}/oauth/authorize?response_type=code` +
@@ -1655,6 +1277,3 @@
       function getErrorMessage(error) {
         return error && error.message ? error.message : String(error || "Unknown error");
       }
-    </script>
-  </body>
-</html>
