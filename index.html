@@ -9,7 +9,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB</title>
+  <title>Genesys Context Bridge (GCB)</title>
   <script>
     (function () {
       try {
@@ -41,10 +41,10 @@
     .meta { display: grid; grid-template-columns: 90px 1fr; gap: 4px 8px; margin-top: 8px; color: #405263; font-size: 11px; }
     .meta b { color: #001b3d; }
 
-    .gcb-simple-header { max-width: 760px; margin: 10px auto 0; background: #fff; border: 1px solid #cfd9e3; border-radius: 10px; padding: 9px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 9px; }
-    .gcb-simple-logo { width: 30px; height: 30px; border-radius: 8px; background: #fff; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.12); overflow: hidden; flex: 0 0 auto; }
-    .gcb-simple-logo img { width: 24px; height: 24px; object-fit: contain; }
-    .gcb-simple-title { font-size: 14px; font-weight: 800; color: #004982; line-height: 1.15; }
+    .gcb-simple-header { max-width: 760px; margin: 10px auto 0; background: #fff; border: 1px solid #d7e2ee; border-radius: 8px; padding: 7px 10px; box-shadow: 0 1px 5px rgba(0,0,0,0.05); display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
+    .gcb-simple-logo { width: 24px; height: 24px; border-radius: 7px; background: #fff; display: grid; place-items: center; box-shadow: 0 1px 4px rgba(0,0,0,.10); overflow: hidden; flex: 0 0 auto; }
+    .gcb-simple-logo img { width: 19px; height: 19px; object-fit: contain; }
+    .gcb-simple-title { font-size: 13px; font-weight: 800; color: #004982; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     html.gcb-router-mode body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
     html.gcb-router-mode .gcb-card, html.gcb-router-mode .gcb-simple-header { display: none !important; }
     .gcb-router-compact { display: none; }
@@ -99,7 +99,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.26-banner-style";
+      const ROUTER_VERSION = "v1.7.2.27-banner-exact";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;

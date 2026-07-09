@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.26-banner-style
+Updated package: v1.7.2.27-banner-exact
 
 ## Main changes
 
