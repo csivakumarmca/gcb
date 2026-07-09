@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: RAKBANK-specific common helper functions for legacy GCB page behavior.
+ *          Provides compatibility utilities used by existing Hold/Prospects logic.
+ */
 /* RAKBANK GCB Common Utilities v1.0.0 */
 (function (global) {
   "use strict";

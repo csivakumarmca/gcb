@@ -1,6 +1,11 @@
+<!--
+  Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+  Purpose: Package notes for the current GCB build and deployment model.
+           Documents direct page auth fallback, ChatMonitor replacement, and recommended URLs.
+-->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.24-direct-auth-fallback
+Updated package: v1.7.2.25-file-headers
 
 ## Main changes
 
@@ -47,3 +52,10 @@ index.html?page=prospects&clientId=<OAuthClientId>&region=mypurecloud.ie
 - Agent Script visible pages should call `holdresume.html`, `holdtimer.html`, and `prospects.html` directly to avoid router flicker.
 - If a direct page does not find a valid OAuth token, it shows a small status message and starts OAuth/MFA using `index.html` as the single callback.
 - After OAuth/MFA, `index.html` restores the original direct page URL automatically.
+
+
+## v1.7.2.25 file header update
+
+- Added short author, created date, updated date, and purpose comments to HTML, JS, CSS, and README files.
+- Date used in all file headers: 2026-07-07.
+- No functional behavior changed from v1.7.2.24 direct auth fallback.

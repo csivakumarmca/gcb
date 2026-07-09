@@ -1,3 +1,9 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Runs the ChatMonitor notification listener and auto joined/greeting sender.
+ *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
+ *          Maintains support/admin dashboard status and exportable logs.
+ */
 const APP_VERSION = 'v1.2.5-dashboard';
 let currentUser = null;
 let channel = null;

@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: RAKBANK-specific auth compatibility helper used by legacy GCB pages.
+ *          Keeps older page-level auth calls aligned with the shared OAuth flow.
+ */
 /* RAKBANK GCB Shared OAuth / MFA Recovery v1.0.0 */
 (function (global) {
   "use strict";

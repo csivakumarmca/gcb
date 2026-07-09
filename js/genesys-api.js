@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Small Genesys Cloud API wrapper used by GCB modules.
+ *          Centralizes authenticated GET, POST, and PATCH calls with consistent error handling.
+ */
 /* GCB Genesys API Helpers v1.0.0 */
 (function (global) {
   "use strict";

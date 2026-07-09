@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Shared OAuth/PKCE helper for GCB pages.
+ *          Stores and refreshes browser-side auth state used by direct pages and router fallback.
+ */
 /* GCB Shared OAuth / MFA Recovery v1.0.1-router */
 (function (global) {
   "use strict";

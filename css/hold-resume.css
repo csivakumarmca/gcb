@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Shared Hold/Resume visual styling for summary, timer, alerts, and compact widgets.
+ *          Supports bank-style layout while keeping the embedded page space compact.
+ */
 :root {
       --rak-blue: #004982;
       --rak-blue-2: #0059a8;

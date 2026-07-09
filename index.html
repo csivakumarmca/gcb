@@ -1,3 +1,9 @@
+<!--
+  Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+  Purpose: Common OAuth callback and lightweight router for GCB pages.
+           Restores the originally requested direct page after login/MFA completes.
+           Used mainly by Client App for ChatMonitor and as fallback for direct pages.
+-->
 <!doctype html>
 <html lang="en">
 <head>
@@ -83,7 +89,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.24-direct-auth-fallback";
+      const ROUTER_VERSION = "v1.7.2.25-file-headers";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;

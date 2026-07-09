@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Prospects page business logic for Data Table loading, filtering, and submission.
+ *          Builds selected contact reason/outcome values and updates Genesys participant data.
+ */
 const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const DEFAULT_GENESYS_REGION = "mypurecloud.ie";
       const DEFAULT_APP_VERSION = "RakProspects_v3.12";

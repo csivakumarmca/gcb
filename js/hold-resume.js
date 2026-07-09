@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Hold/Resume business logic shared by holdtimer and hold summary pages.
+ *          Sends hold/resume messages, manages local hold records, and calculates hold status.
+ */
 /************************************************************
      * RAKBANK HOLD RESUME PAGE - v1.0.12
      * Uses existing Genesys client-side send-message approach.

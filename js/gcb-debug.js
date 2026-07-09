@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Shared debug/status bridge for GCB modules.
+ *          Writes module status and diagnostic messages for support troubleshooting.
+ */
 /* GCB Central Debug Bridge v1.1.0 */
 (function (global) {
   "use strict";

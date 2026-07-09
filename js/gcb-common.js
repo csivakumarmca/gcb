@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Common utility helpers for URL parameters, storage, status, and formatting.
+ *          Keeps shared browser-side behavior consistent across GCB modules.
+ */
 /* GCB Common Utilities v1.0.0 */
 (function (global) {
   "use strict";

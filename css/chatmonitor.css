@@ -1,3 +1,8 @@
+/*
+ * Author: Sivakumar Chandrahasu | Created: 2026-07-07 | Updated: 2026-07-07
+ * Purpose: Styles the ChatMonitor dashboard, admin cards, views, and notification logs.
+ *          Keeps support/admin troubleshooting screens readable in the Genesys Client App.
+ */
 :root{
     --brand1:#0f6f9f; --brand2:#20a7d8; --bg:#f5f7fb; --card:#ffffff; --ink:#172033; --muted:#64748b; --line:#e5e7eb;
     --green:#15803d; --orange:#b45309; --red:#b91c1c; --blue:#1d4ed8; --purple:#6d28d9; --slate:#334155;
