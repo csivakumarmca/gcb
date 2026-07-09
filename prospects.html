@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Prospects v3</title>
+    <title>Prospects v3.2 Direct Auth Fallback</title>
     <style>
       * {
         box-sizing: border-box;
@@ -536,7 +536,7 @@
         if (!token) {
           if (AUTO_REFRESH_TOKEN_ENABLED && sessionStorage.getItem(STORAGE_PROSPECTS_AUTO_REFRESH_BLOCKED) !== "true") {
             authRow.hidden = true;
-            setRuntimeStatus("OAuth token missing. Auto refreshing token...");
+            setRuntimeStatus("OAuth/MFA is required. Opening secure login...");
             await autoRefreshOAuthToken();
             return;
           }

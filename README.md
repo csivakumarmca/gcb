@@ -1,6 +1,6 @@
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.22-chatmonitor-dashboard
+Updated package: v1.7.2.24-direct-auth-fallback
 
 ## Main changes
 
@@ -13,6 +13,7 @@ Updated package: v1.7.2.22-chatmonitor-dashboard
   - js/chatmonitor.js
   - css/chatmonitor.css
 - index.html is now the common OAuth/MFA callback and router page.
+- Router mode is now silent/compact for page=holdresume, page=holdtimer, page=prospects, and page=chatmonitor, so the full GCB dashboard is not shown before the target page opens.
 - Shared OAuth uses index.html as the redirect URI, then restores the original target page.
 
 - Improved ChatMonitor support/admin dashboard:
@@ -39,3 +40,10 @@ index.html?page=prospects&clientId=<OAuthClientId>&region=mypurecloud.ie
 - holdtimer.html - Hold Timer page
 - prospects.html - Prospects page
 
+
+
+## v1.7.2.24 direct auth fallback update
+- Client App should use `index.html?page=chatmonitor`.
+- Agent Script visible pages should call `holdresume.html`, `holdtimer.html`, and `prospects.html` directly to avoid router flicker.
+- If a direct page does not find a valid OAuth token, it shows a small status message and starts OAuth/MFA using `index.html` as the single callback.
+- After OAuth/MFA, `index.html` restores the original direct page URL automatically.

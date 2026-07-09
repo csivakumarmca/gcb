@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.22-chatmonitor-dashboard",
+  "version": "v1.7.2.24-direct-auth-fallback",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -13,9 +13,9 @@
   },
   "recommendedUrls": {
     "clientApp": "index.html?page=chatmonitor&clientId=<OAuthClientId>&region=mypurecloud.ie&source=ClientApp",
-    "interactionWidgetHoldResume": "index.html?page=holdresume&clientId=<OAuthClientId>&region=mypurecloud.ie",
-    "interactionWidgetHoldTimer": "index.html?page=holdtimer&clientId=<OAuthClientId>&region=mypurecloud.ie",
-    "interactionWidgetProspects": "index.html?page=prospects&clientId=<OAuthClientId>&region=mypurecloud.ie"
+    "interactionWidgetHoldResume": "holdresume.html?v=<AFT_GCB_Version>&<CommonParams>",
+    "interactionWidgetHoldTimer": "holdtimer.html?v=<AFT_GCB_Version>&<CommonParams>",
+    "interactionWidgetProspects": "prospects.html?v=<AFT_GCB_Version>&<CommonParams>"
   },
   "removed": [
     "sendmsg.html",
@@ -25,7 +25,8 @@
   "notes": [
     "SendMsg page removed because Agent Joined/Greeting send logic is now handled by Chat Monitor.",
     "index.html is the single OAuth/MFA callback and router page.",
-    "Use index.html?page=<target> in Genesys Client App and Interaction Widget URLs to avoid OAuth redirect loss.",
-    "chatmonitor.html is split into css/chatmonitor.css and js/chatmonitor.js."
+    "Use index.html?page=chatmonitor for Client App. Use direct holdresume.html, holdtimer.html, and prospects.html URLs in Agent Script to avoid router flicker.",
+    "chatmonitor.html is split into css/chatmonitor.css and js/chatmonitor.js.",
+    "Direct business pages silently start OAuth/MFA only when token is missing, then index.html restores the original page URL after login."
   ]
 }

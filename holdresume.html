@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Agent Hold Summary v1.7.2.20</title>
+  <title>Agent Hold Summary v1.7.2.25</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     :root {
@@ -703,7 +703,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.7.2.20";
+    const HR_VERSION = "v1.0.7-direct-auth-fallback";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -2755,7 +2755,10 @@
       const hasToken = !!getAccessToken();
       if (!hasToken && CONFIG.clientId) {
         isInitialSummaryLoading = false;
-        setStatus("Ready. Hold/Resume action will be triggered from Agent Script.", "info");
+        setStatus("OAuth/MFA is required. Opening secure login...", "info");
+        showPersistentAlert("OAuth/MFA is required. After login, this Hold Summary page will reopen automatically.", "warning");
+        await startPKCELogin();
+        return;
       } else if (!hasToken && !CONFIG.clientId) {
         isInitialSummaryLoading = false;
         setStatus("clientId and OAuth token are missing. The page can show cached summary only. Pass clientId in the URL or open the GCB index page first.", "warning");

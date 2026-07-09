@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GCB Hold Timer v1.7.2.24</title>
+  <title>GCB Hold Timer v1.7.2.25</title>
   <style>
     :root {
       --ok:#047857; --warn:#b45309; --danger:#b91c1c; --muted:#64748b;
@@ -88,7 +88,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.24";
+      const VERSION = "v1.7.2.25-direct-auth-fallback";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const ACTION_STATE_PREFIX = "GCB_HT_EXTERNAL_ACTION_";
@@ -98,6 +98,10 @@
       let processingLabel = "";
 
       const params = new URLSearchParams(window.location.search || "");
+      const DEFAULT_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
+      const STORAGE_CLIENT_ID = "gcb_clientId";
+      const STORAGE_REGION = "gcb_region";
+      const STORAGE_ORIGINAL_URL = "gcb_gcb_auth_original_url";
       function p(name, def){ const v=params.get(name); return v===null || v==="" ? def : v; }
       function n(name, def){ const v=Number(p(name, def)); return Number.isFinite(v) ? v : def; }
       function b(name, def){ const raw=String(p(name, def ? "true" : "false")).toLowerCase(); return !(raw === "false" || raw === "0" || raw === "no"); }
@@ -106,7 +110,8 @@
       function safe(value){ return String(value == null ? "" : value); }
 
       const CONFIG = {
-        region:p("region", p("gcTargetEnv", "mypurecloud.ie")),
+        clientId:p("clientId", sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_CLIENT_ID),
+        region:p("region", p("gcTargetEnv", sessionStorage.getItem(STORAGE_REGION) || "mypurecloud.ie")),
         conversationId:p("conversationId", ""),
         communicationId:p("communicationId", p("agentCommunicationId", "")),
         agentCommunicationId:p("agentCommunicationId", p("communicationId", "")),
@@ -211,6 +216,39 @@
         }
         return token;
       }
+      function getIndexRedirectUri(){
+        try { return window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, "/index.html"); }
+        catch(_) { return window.location.origin + "/index.html"; }
+      }
+      function base64UrlEncode(buffer){
+        let str=""; const bytes=new Uint8Array(buffer);
+        for(let i=0;i<bytes.byteLength;i++) str += String.fromCharCode(bytes[i]);
+        return btoa(str).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+      }
+      function generateCodeVerifier(){
+        const array=new Uint8Array(64); window.crypto.getRandomValues(array); return base64UrlEncode(array);
+      }
+      async function generateCodeChallenge(verifier){
+        const data=new TextEncoder().encode(verifier);
+        const digest=await window.crypto.subtle.digest("SHA-256", data);
+        return base64UrlEncode(new Uint8Array(digest));
+      }
+      async function startPKCELogin(){
+        if (!CONFIG.clientId) throw new Error("clientId is required for Genesys OAuth login.");
+        const verifier=generateCodeVerifier();
+        const challenge=await generateCodeChallenge(verifier);
+        sessionStorage.setItem("pkce_code_verifier", verifier);
+        sessionStorage.setItem(STORAGE_CLIENT_ID, CONFIG.clientId || "");
+        sessionStorage.setItem(STORAGE_REGION, CONFIG.region || "");
+        sessionStorage.setItem(STORAGE_ORIGINAL_URL, window.location.href);
+        const authUrl = "https://login." + CONFIG.region + "/oauth/authorize" +
+          "?response_type=code" +
+          "&client_id=" + encodeURIComponent(CONFIG.clientId) +
+          "&redirect_uri=" + encodeURIComponent(getIndexRedirectUri()) +
+          "&code_challenge=" + encodeURIComponent(challenge) +
+          "&code_challenge_method=S256";
+        window.location.href = authUrl;
+      }
       function buildActionKey(){
         const raw=CONFIG.requestId || [CONFIG.conversationId || "NO_CONV", CONFIG.externalAction || "NONE", CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_COMM"].join("|");
         return ACTION_STATE_PREFIX + sanitizeKey(raw);
@@ -237,6 +275,13 @@
         if (CONFIG.externalAction !== "HOLD" && CONFIG.externalAction !== "RESUME") return;
         const previous=getActionState();
         if (previous && (previous.status === "DONE" || previous.status === "IN_PROGRESS")) return;
+        if (!getAccessToken()) {
+          processingAction=true;
+          processingLabel="Opening login/MFA";
+          render();
+          setTimeout(() => { startPKCELogin().catch(err => { processingLabel="Login failed"; setCls("exceeded"); setText("icon","⚠️"); setText("label", err && err.message ? err.message : String(err)); }); }, 100);
+          return;
+        }
         processingAction=true;
         processingLabel=CONFIG.externalAction === "HOLD" ? "Sending Hold" : "Sending Resume";
         render();
