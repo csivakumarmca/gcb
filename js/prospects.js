@@ -51,9 +51,9 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         pageSize: Number(getParam("wrapupPageSize") || 200),
       };
 
-      const CONTACT_REASON_SEPARATOR = getParam("contactReasonSeparator") || " ⇢ ";
-      const INTERACTION_OUTCOME_SEPARATOR = getParam("interactionOutcomeSeparator") || CONTACT_REASON_SEPARATOR;
-      const INTERACTION_OUTCOME_MULTI_SELECT = getBooleanParam("interactionOutcomeMultiSelect", false) || getBooleanParam("allowMultipleInteractionOutcome", false) || getBooleanParam("multiSelectOutcome", false);
+      let CONTACT_REASON_SEPARATOR = getParam("contactReasonSeparator") || " ⇢ ";
+      let INTERACTION_OUTCOME_SEPARATOR = getParam("interactionOutcomeSeparator") || CONTACT_REASON_SEPARATOR;
+      let INTERACTION_OUTCOME_MULTI_SELECT = getBooleanParam("interactionOutcomeMultiSelect", false) || getBooleanParam("allowMultipleInteractionOutcome", false) || getBooleanParam("multiSelectOutcome", false);
 
       const dataTableColumnConfig = {
         typeOfInteraction: buildColumnAliases(
@@ -132,6 +132,58 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         return aliases;
       }
 
+
+      function attrText(attrs, name, fallback) {
+        const value = attrs && Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : undefined;
+        const text = String(value ?? "").trim();
+        return text ? text : (fallback || "");
+      }
+      function attrBool(attrs, name, fallback) {
+        const text = attrText(attrs, name, "").toLowerCase();
+        if (["true", "yes", "1", "y"].includes(text)) return true;
+        if (["false", "no", "0", "n"].includes(text)) return false;
+        return fallback;
+      }
+      function mergeParticipantAttributesFromConversation(conversation) {
+        const output = {};
+        const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
+        participants.forEach((p) => { if (p && p.attributes) Object.assign(output, p.attributes); });
+        participants.forEach((p) => {
+          const pid = String((p && p.id) || "").trim();
+          if (pid && pid === context.participantId && p.attributes) Object.assign(output, p.attributes);
+        });
+        return output;
+      }
+      async function getMessageConversation(token) {
+        const response = await fetch(`${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}`, {
+          method: "GET",
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        });
+        const text = await response.text();
+        const payload = parseJson(text);
+        if (!response.ok) throw new Error(payload.message || payload.error || `Conversation fetch failed: ${response.status}`);
+        return payload;
+      }
+      async function applyGcbConfigFromParticipantData(token) {
+        if (!token || !context.conversationId) return;
+        try {
+          const conversation = await getMessageConversation(token);
+          const attrs = mergeParticipantAttributesFromConversation(conversation);
+          dataTableConfig.types = attrText(attrs, "AFT_GCB_ProspectsTypeDataTableId", dataTableConfig.types);
+          dataTableConfig.prospects = attrText(attrs, "AFT_GCB_ProspectsMappingDataTableId", dataTableConfig.prospects);
+          wrapupConfig.createIfMissing = attrBool(attrs, "AFT_GCB_CreateWrapupIfMissing", wrapupConfig.createIfMissing);
+          wrapupConfig.nameSeparator = attrText(attrs, "AFT_GCB_WrapupNameSeparator", wrapupConfig.nameSeparator);
+          CONTACT_REASON_SEPARATOR = attrText(attrs, "AFT_GCB_ContactReasonSeparator", CONTACT_REASON_SEPARATOR);
+          INTERACTION_OUTCOME_SEPARATOR = attrText(attrs, "AFT_GCB_InteractionOutcomeSeparator", INTERACTION_OUTCOME_SEPARATOR || CONTACT_REASON_SEPARATOR);
+          if (!INTERACTION_OUTCOME_SEPARATOR) INTERACTION_OUTCOME_SEPARATOR = CONTACT_REASON_SEPARATOR;
+          INTERACTION_OUTCOME_MULTI_SELECT = attrBool(attrs, "AFT_GCB_InteractionOutcomeMultiSelect", INTERACTION_OUTCOME_MULTI_SELECT);
+          state.debugInfo.gcbConfigSource = "participantData";
+        } catch (error) {
+          state.debugInfo.gcbConfigSource = "default/url";
+          state.debugInfo.gcbConfigWarning = getErrorMessage(error);
+        }
+      }
+
       async function init() {
         if (getParam("clientId")) sessionStorage.setItem(STORAGE_CLIENT_ID, getParam("clientId"));
         if (getParam("region") || getParam("gcTargetEnv")) sessionStorage.setItem(STORAGE_REGION, getParam("region") || getParam("gcTargetEnv"));
@@ -180,6 +232,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           return;
         }
 
+        await applyGcbConfigFromParticipantData(token);
         await loadLiveData(token);
       }
 

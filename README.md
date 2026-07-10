@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.27-banner-exact
+Updated package: v1.7.2.30-participant-status
 
 ## Main changes
 
@@ -59,3 +59,15 @@ index.html?page=prospects&clientId=<OAuthClientId>&region=mypurecloud.ie
 - Added short author, created date, updated date, and purpose comments to HTML, JS, CSS, and README files.
 - Date used in all file headers: 2026-07-07.
 - No functional behavior changed from v1.7.2.24 direct auth fallback.
+
+
+## v1.7.2.30 participant-config status update
+
+GCB now reads configuration from participant data populated by CM/Architect from PROD_AFT_GCB_Config.
+
+Applied participant attributes include:
+- Hold/Resume message, limits, alert/sound/notification settings, and EN/AR labels.
+- Prospects Data Table IDs, separators, multi-select flag, and wrap-up create flag.
+- ChatMonitor support/admin role lists, supervisor keyword, and EN/AR joined/greeting messages.
+
+GCB does not call the config Data Table directly; CM/Architect remains responsible for reading the table and setting participant data.

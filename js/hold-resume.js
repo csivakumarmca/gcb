@@ -320,7 +320,7 @@
       try {
         // A browser page cannot directly force Windows taskbar flashing from an embedded iframe.
         // Browser notification is the supported best-effort method. Title blinking remains the fallback.
-        showBrowserNotification(titleText || "RAKBANK Hold Alert", bodyText || "Hold action requires your attention.");
+        showBrowserNotification(titleText || CONFIG.holdAlertTitle, bodyText || "Hold action requires your attention.");
         if (navigator.vibrate) {
           try { navigator.vibrate([250, 120, 250]); } catch (_) {}
         }
@@ -361,7 +361,7 @@
           attentionBlinkTimeout = null;
         }, CONFIG.alertBlinkDurationMs);
       }
-      const finalTitleText = titleText || "⚠️ Hold Alert";
+      const finalTitleText = titleText || ("⚠️ " + CONFIG.holdAlertTitle);
       startTitleBlink(finalTitleText, CONFIG.titleBlinkDurationMs);
       triggerTaskbarAttention(finalTitleText, safeString(message));
       playAttentionBeep();
@@ -380,7 +380,7 @@
 
     function getMaxAttemptsAlertMessage() {
       const effectiveCount = getEffectiveHoldCount();
-      return "⚠️  ⛔ You have already reached the maximum allowed hold attempts. ⏱ (" + effectiveCount + " / " + CONFIG.maxHoldAttempts + ")";
+      return "⚠️  ⛔ " + CONFIG.holdMaxAttemptsAlertText + " (" + effectiveCount + " / " + CONFIG.maxHoldAttempts + ")";
     }
 
     function showMaxAttemptsAlert() {
@@ -452,8 +452,83 @@
       requestNotificationPermissionOnHold: getBoolParam("requestNotificationPermissionOnHold", true),
       notificationAutoCloseMs: Math.max(3000, getNumberParam("notificationAutoCloseMs", 12000)),
       autoRefreshDelayMs: Math.max(500, getNumberParam("autoRefreshDelayMs", 1200)),
-      source: getParam("source", "HoldResumePage")
+      source: getParam("source", "HoldResumePage"),
+      holdMaxTimeAlertText: "Maximum hold duration reached. Please resume the chat.",
+      holdMaxAttemptsAlertText: "You have reached the maximum allowed hold attempts.",
+      holdAlertTitle: "Hold Alert",
+      autoResumeSentText: "Auto resume sent."
     };
+
+
+    function attrText(attrs, name, fallback) {
+      const value = attrs && Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : undefined;
+      const text = safeString(value);
+      return text ? text : (fallback || "");
+    }
+    function attrBool(attrs, name, fallback) {
+      const text = attrText(attrs, name, "").toLowerCase();
+      if (["true", "yes", "1", "y"].includes(text)) return true;
+      if (["false", "no", "0", "n"].includes(text)) return false;
+      return fallback;
+    }
+    function attrNumber(attrs, name, fallback, min) {
+      const text = attrText(attrs, name, "");
+      const num = Number(text);
+      if (!Number.isFinite(num)) return fallback;
+      return typeof min === "number" ? Math.max(min, num) : num;
+    }
+    function getGcbLanguage(attrs) {
+      return attrText(attrs, "language", attrText(attrs, "Language", attrText(attrs, "AFT_Language", attrText(attrs, "Chat_Language", "en")))).toLowerCase();
+    }
+    function pickLocalizedAttr(attrs, enName, arName, fallbackEn) {
+      const lang = getGcbLanguage(attrs);
+      const isArabic = lang === "ar" || lang === "arabic" || lang.indexOf("arabic") >= 0;
+      return isArabic
+        ? attrText(attrs, arName, attrText(attrs, enName, fallbackEn))
+        : attrText(attrs, enName, attrText(attrs, arName, fallbackEn));
+    }
+    function mergeParticipantAttributesFromConversation(conversation) {
+      const output = {};
+      const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
+      participants.forEach(function (p) { if (p && p.attributes) Object.assign(output, p.attributes); });
+      participants.forEach(function (p) {
+        const pid = safeString(p && p.id);
+        if (pid && (pid === CONFIG.participantId || pid === CONFIG.agentParticipantId) && p.attributes) Object.assign(output, p.attributes);
+      });
+      return output;
+    }
+    function applyGcbParticipantConfig(attrs) {
+      if (!attrs || !Object.keys(attrs).length) return;
+      CONFIG.holdMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_HoldMessageText", CONFIG.holdMessageText));
+      CONFIG.resumeMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_ResumeMessageText", CONFIG.resumeMessageText));
+      CONFIG.maxHoldAttempts = Math.max(1, attrNumber(attrs, "AFT_GCB_MaxHoldAttempts", CONFIG.maxHoldAttempts, 1));
+      CONFIG.maxHoldTime = attrNumber(attrs, "AFT_GCB_MaxHoldTimeSeconds", CONFIG.maxHoldTime, 0);
+      CONFIG.isCustomerBasedHoldCalculation = attrBool(attrs, "AFT_GCB_CustomerBasedHoldCalculation", CONFIG.isCustomerBasedHoldCalculation);
+      CONFIG.alertBlinkEnabled = attrBool(attrs, "AFT_GCB_AlertBlinkEnabled", CONFIG.alertBlinkEnabled);
+      CONFIG.alertBlinkDurationMs = Math.max(3000, attrNumber(attrs, "AFT_GCB_AlertBlinkDurationMs", CONFIG.alertBlinkDurationMs, 3000));
+      CONFIG.alertSoundEnabled = attrBool(attrs, "AFT_GCB_AlertSoundEnabled", CONFIG.alertSoundEnabled);
+      CONFIG.alertSoundRepeatCount = Math.max(1, attrNumber(attrs, "AFT_GCB_AlertSoundRepeatCount", CONFIG.alertSoundRepeatCount, 1));
+      CONFIG.alertSoundDurationMs = Math.max(250, attrNumber(attrs, "AFT_GCB_AlertSoundDurationMs", CONFIG.alertSoundDurationMs, 250));
+      CONFIG.alertSoundGapMs = Math.max(80, attrNumber(attrs, "AFT_GCB_AlertSoundGapMs", CONFIG.alertSoundGapMs, 80));
+      CONFIG.browserNotificationEnabled = attrBool(attrs, "AFT_GCB_BrowserNotificationEnabled", CONFIG.browserNotificationEnabled);
+      CONFIG.taskbarBlinkEnabled = attrBool(attrs, "AFT_GCB_TaskbarBlinkEnabled", CONFIG.taskbarBlinkEnabled);
+      CONFIG.titleBlinkDurationMs = Math.max(3000, attrNumber(attrs, "AFT_GCB_TitleBlinkDurationMs", CONFIG.titleBlinkDurationMs, 3000));
+      CONFIG.notificationAutoCloseMs = Math.max(3000, attrNumber(attrs, "AFT_GCB_NotificationAutoCloseMs", CONFIG.notificationAutoCloseMs, 3000));
+      CONFIG.holdMaxTimeAlertText = pickLocalizedAttr(attrs, "AFT_GCB_HoldMaxTimeAlertText_EN", "AFT_GCB_HoldMaxTimeAlertText_AR", CONFIG.holdMaxTimeAlertText);
+      CONFIG.holdMaxAttemptsAlertText = pickLocalizedAttr(attrs, "AFT_GCB_HoldMaxAttemptsAlertText_EN", "AFT_GCB_HoldMaxAttemptsAlertText_AR", CONFIG.holdMaxAttemptsAlertText);
+      CONFIG.holdAlertTitle = pickLocalizedAttr(attrs, "AFT_GCB_HoldAlertTitle_EN", "AFT_GCB_HoldAlertTitle_AR", CONFIG.holdAlertTitle);
+      CONFIG.autoResumeSentText = pickLocalizedAttr(attrs, "AFT_GCB_AutoResumeSentText_EN", "AFT_GCB_AutoResumeSentText_AR", CONFIG.autoResumeSentText);
+      addDebug("GCB_CONFIG_APPLIED", "participantData=true | maxHoldAttempts=" + CONFIG.maxHoldAttempts + " | maxHoldTime=" + CONFIG.maxHoldTime + " | holdMessageText=" + CONFIG.holdMessageText + " | resumeMessageText=" + CONFIG.resumeMessageText);
+    }
+    async function loadGcbConfigFromParticipantData(token) {
+      if (!token || !CONFIG.conversationId) return;
+      try {
+        const conversation = await getMessageConversationDirect(token, CONFIG.conversationId);
+        applyGcbParticipantConfig(mergeParticipantAttributesFromConversation(conversation));
+      } catch (err) {
+        addDebug("GCB_CONFIG_LOAD_WARN", err.message || String(err));
+      }
+    }
 
     if (CONFIG.clientId) sessionStorage.setItem(STORAGE_CLIENT_ID, CONFIG.clientId);
     if (CONFIG.region) sessionStorage.setItem(STORAGE_REGION, CONFIG.region);
@@ -1343,8 +1418,8 @@
     async function autoResumeOnTimeout() {
       if (!isOnHold || (activeTimer && activeTimer.autoResumeSent)) return;
       if (activeTimer) activeTimer.autoResumeSent = true;
-      showPersistentAlert("Maximum hold duration reached (" + CONFIG.maxHoldTime + " seconds). Auto resume is being sent...", "warning");
-      setStatus("Maximum hold duration reached. Auto resume is being sent...", "warning");
+      showPersistentAlert(CONFIG.holdMaxTimeAlertText + " Auto resume is being sent...", "warning");
+      setStatus(CONFIG.holdMaxTimeAlertText + " Auto resume is being sent...", "warning");
       addDebug("AUTO_RESUME_START", "maxHoldTime=" + CONFIG.maxHoldTime);
 
       try {
@@ -1361,11 +1436,11 @@
         if (getEffectiveHoldCount() >= CONFIG.maxHoldAttempts) {
           const maxMessage = getMaxAttemptsAlertMessage();
           startAttentionAlert(maxMessage, "error", "⛔ Max Hold Reached");
-          setStatus("Maximum hold attempts reached. Further Hold is not allowed.", "error");
+          setStatus(CONFIG.holdMaxAttemptsAlertText, "error");
         } else {
-          const durationMessage = "Maximum hold duration reached (" + CONFIG.maxHoldTime + " seconds). Auto resume was sent automatically.";
+          const durationMessage = CONFIG.holdMaxTimeAlertText + " " + CONFIG.autoResumeSentText;
           startAttentionAlert(durationMessage, "warning", "⚠️ Auto Resume Sent");
-          setStatus("Auto resume sent because maximum hold duration was reached.", "success");
+          setStatus(CONFIG.autoResumeSentText, "success");
         }
         hideStatusSoon();
       } catch (err) {
@@ -1411,7 +1486,7 @@
       }
 
       if (action === "HOLD" && getEffectiveHoldCount() >= CONFIG.maxHoldAttempts) {
-        const validationMessage = "⚠️  ⛔ You have already reached the maximum allowed hold attempts. ⏱ (" + getEffectiveHoldCount() + " / " + CONFIG.maxHoldAttempts + ")";
+        const validationMessage = "⚠️  ⛔ " + CONFIG.holdMaxAttemptsAlertText + " (" + getEffectiveHoldCount() + " / " + CONFIG.maxHoldAttempts + ")";
         startAttentionAlert(validationMessage, "error", "⛔ Max Hold Reached");
         setStatus(validationMessage, "error");
         addDebug("VALIDATION_BLOCK", "Max hold attempts reached. effectiveCount=" + getEffectiveHoldCount() + " | max=" + CONFIG.maxHoldAttempts);
@@ -1495,6 +1570,7 @@
       }
 
       restoreButtonState();
+      if (getAccessToken()) await loadGcbConfigFromParticipantData(getAccessToken());
       restoreMaxHoldTimer();
       applySummary(loadCachedSummary() || buildInitialSummaryFromParams());
 

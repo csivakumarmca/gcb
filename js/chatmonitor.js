@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.5-dashboard';
+const APP_VERSION = 'v1.2.5';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -26,6 +26,58 @@ let dashLastError = '-';
 const FAST_LOCAL_LOCK_PREFIX = 'AFT_GCB_FAST_LOCK_';
 const FAST_LOCAL_DONE_PREFIX = 'AFT_GCB_FAST_DONE_';
 const FAST_LOCAL_LOCK_TTL_MS = 15000;
+const DEFAULT_SUPPORT_ROLES = ['RAK IT Admin','RAK Script Admin','RAK Access control','AFT_Support'];
+const DEFAULT_ADMIN_ROLES = ['AFT_Support','RAK IT Admin'];
+let latestGcbAccessConfig = { supportRoles: DEFAULT_SUPPORT_ROLES.slice(), adminRoles: DEFAULT_ADMIN_ROLES.slice(), supervisorKeyword: 'supervisor' };
+
+const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
+  {group:'HOLD', name:'AFT_GCB_HoldMessageText', required:true},
+  {group:'HOLD', name:'AFT_GCB_ResumeMessageText', required:true},
+  {group:'HOLD', name:'AFT_GCB_MaxHoldAttempts', required:true},
+  {group:'HOLD', name:'AFT_GCB_MaxHoldTimeSeconds', required:true},
+  {group:'HOLD', name:'AFT_GCB_AutoResumeEnabled', required:true},
+  {group:'HOLD', name:'AFT_GCB_CustomerBasedHoldCalculation', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_AlertBlinkEnabled', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_AlertBlinkDurationMs', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_AlertSoundEnabled', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_AlertSoundRepeatCount', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_AlertSoundDurationMs', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_AlertSoundGapMs', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_BrowserNotificationEnabled', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_TaskbarBlinkEnabled', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_TitleBlinkDurationMs', required:true},
+  {group:'HOLD_ALERT', name:'AFT_GCB_NotificationAutoCloseMs', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxTimeAlertText_EN', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxTimeAlertText_AR', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxAttemptsAlertText_EN', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxAttemptsAlertText_AR', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldAlertTitle_EN', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldAlertTitle_AR', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_AutoResumeSentText_EN', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_AutoResumeSentText_AR', required:true},
+  {group:'PROSPECTS', name:'AFT_GCB_ProspectsTypeDataTableId', required:true},
+  {group:'PROSPECTS', name:'AFT_GCB_ProspectsMappingDataTableId', required:true},
+  {group:'PROSPECTS', name:'AFT_GCB_InteractionOutcomeMultiSelect', required:true},
+  {group:'PROSPECTS', name:'AFT_GCB_ContactReasonSeparator', required:true},
+  {group:'PROSPECTS', name:'AFT_GCB_WrapupNameSeparator', required:true},
+  {group:'PROSPECTS', name:'AFT_GCB_CreateWrapupIfMissing', required:true},
+  {group:'PROSPECTS_OPTIONAL', name:'AFT_GCB_InteractionOutcomeSeparator', required:false},
+  {group:'CHATMONITOR', name:'AFT_GCB_SupportRoles', required:true},
+  {group:'CHATMONITOR', name:'AFT_GCB_AdminRoles', required:true},
+  {group:'CHATMONITOR', name:'AFT_GCB_SupervisorKeywordDefault', required:true},
+  {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_EN', required:true},
+  {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_AR', required:true},
+  {group:'CHAT_MESSAGE', name:'AFT_GCB_SupervisorJoinedText_EN', required:true},
+  {group:'CHAT_MESSAGE', name:'AFT_GCB_SupervisorJoinedText_AR', required:true},
+  {group:'CHAT_MESSAGE', name:'AFT_GCB_GreetingText_EN', required:true},
+  {group:'CHAT_MESSAGE', name:'AFT_GCB_GreetingText_AR', required:true},
+  {group:'CHAT_MESSAGE_FINAL', name:'AFT_GCB_AgentJoinedText', required:false},
+  {group:'CHAT_MESSAGE_FINAL', name:'AFT_GCB_SupervisorJoinedText', required:false},
+  {group:'CHAT_MESSAGE_FINAL', name:'AFT_GCB_GreetingText', required:false},
+  {group:'DUPLICATE_CONTROL', name:'AFT_GCB_JoinedSentKeys', required:false},
+  {group:'DUPLICATE_CONTROL', name:'AFT_GCB_GREETING_SENT_KEYS', required:false}
+];
+
 
 const regionMap = {
   euw1: { api: 'https://api.mypurecloud.ie', login: 'https://login.mypurecloud.ie' },
@@ -69,6 +121,7 @@ function log(type, data){
   logEl.insertAdjacentHTML('afterbegin', `<div class="line ${cls}" data-level="${levelAttr}">${escapeHtml(line)}</div>`);
   while(logEl.children.length > 300) logEl.removeChild(logEl.lastElementChild);
   applyLogFilter();
+  refreshParticipantConfigStatus();
   updateDashboardStatus();
 }
 function buildLogText(){
@@ -164,23 +217,24 @@ function hasAccessRole(roleNames, target){
   const t = normalizeAccessRole(target);
   return (roleNames||[]).some(r => normalizeAccessRole(r) === t || normalizeAccessRole(r).includes(t));
 }
-function updateViewAccess(roleInfo){
+function splitCsvConfig(value, fallback=[]){
+  const items = String(value || '').split(/[;,|]/).map(x=>x.trim()).filter(Boolean);
+  return items.length ? items : fallback.slice();
+}
+function updateViewAccess(roleInfo, accessConfig){
   // Agent View is always available for all logged-in users.
   const roles = (roleInfo && roleInfo.roleNames) || [];
-  const supportAccess =
-    hasAccessRole(roles,'RAK IT Admin') ||
-    hasAccessRole(roles,'RAK Script Admin') ||
-    hasAccessRole(roles,'RAK Access control') ||
-    hasAccessRole(roles,'AFT_Support');
-  const adminAccess =
-    hasAccessRole(roles,'AFT_Support') ||
-    hasAccessRole(roles,'RAK IT Admin');
+  const cfg = accessConfig || latestGcbAccessConfig || {};
+  const supportTargets = splitCsvConfig(cfg.supportRolesText || cfg.supportRoles, DEFAULT_SUPPORT_ROLES);
+  const adminTargets = splitCsvConfig(cfg.adminRolesText || cfg.adminRoles, DEFAULT_ADMIN_ROLES);
+  const supportAccess = supportTargets.some(target => hasAccessRole(roles, target));
+  const adminAccess = adminTargets.some(target => hasAccessRole(roles, target));
   const btnSupport = $('tabBtnSupport'), btnAdmin = $('tabBtnAdmin');
   if(btnSupport) btnSupport.style.display = supportAccess ? '' : 'none';
   if(btnAdmin) btnAdmin.style.display = adminAccess ? '' : 'none';
   if(!supportAccess && $('tab-support').classList.contains('active')) showTab('agent');
   if(!adminAccess && $('tab-admin').classList.contains('active')) showTab('agent');
-  log('INFO',{viewAccess:true,roles,agentView:true,supportView:supportAccess,adminView:adminAccess,rule:'Agent View for all. Support: RAK IT Admin/RAK Script Admin/RAK Access control. Admin: AFT_Support/RAK IT Admin.'});
+  log('INFO',{viewAccess:true,roles,agentView:true,supportView:supportAccess,adminView:adminAccess,supportRolesConfig:supportTargets,adminRolesConfig:adminTargets,rule:'Agent View for all. Support/Admin roles loaded from AFT_GCB_SupportRoles and AFT_GCB_AdminRoles participant data when available.'});
 }
 function applyRegion(){ const r = regionMap[$('region').value]; $('apiBase').value = r.api; $('loginBase').value = r.login; }
 function queryParam(name){ return new URLSearchParams(location.search).get(name) || ''; }
@@ -399,6 +453,7 @@ function upsertRecord(conversationId,agent,comm,info,body,customer,participants=
   const existing=conversations.get(recordId)||{};
   const customerAttrs=customer.attributes||{};
   const gcbConfig=getGcbMessageConfig(customerAttrs);
+  if(currentUser?.id){ updateViewAccess({roleNames: Array.from(userRoleCache.values()).find(x=>x && Array.isArray(x.roleNames))?.roleNames || []}, gcbConfig); }
   const customerSessionId=getCustomerSessionId(customer, customerAttrs);
   const customerSessionStartTime=getCustomerSessionStartTime(customer, customerAttrs);
   const currentAgentConnectedTime=comm.connectedTime||agent.connectedTime||agent.startTime||'';
@@ -409,7 +464,7 @@ function upsertRecord(conversationId,agent,comm,info,body,customer,participants=
     agentName:agent.name||agent.user?.name||currentUser?.name||'-', agentUserId, participantId:participantId||existing.participantId||'',
     communicationId:communicationId||existing.communicationId||'', channel:comm.toAddress?.name||comm.fromAddress?.name||customer.messages?.[0]?.toAddress?.name||'WebMessaging',
     mediaType:comm.type||'webmessaging', held:!!comm.held, connectedTime:comm.connectedTime||agent.connectedTime||existing.connectedTime||'',
-    greetingStatus:existing.greetingStatus||'Pending', lastAction:info.note || existing.lastAction || '-', raw:body,
+    greetingStatus:existing.greetingStatus||'Pending', lastAction:info.note || existing.lastAction || '-', raw:body, gcbParticipantAttributes: customerAttrs,
     customerParticipantId:customer.id||existing.customerParticipantId||'', customerSessionId, customerSessionStartTime, customerSessionSource:getCustomerSessionSource(customer,customerAttrs),
     existingJoinedKeys:collectExistingJoinedKeys(participants) || customerAttrs.AFT_GCB_JoinedSentKeys || customerAttrs.AFT_GCB_GREETING_SENT_KEYS || '', isTransferJoin, previousAgentCount, messageType:existing.messageType||baseMessageType, supervisorRole:false,
     supervisorRoleChecked:false, roleNames:existing.roleNames||'', gcbConfig };
@@ -476,7 +531,7 @@ function getPreviousDifferentAgentCount(participants=[], currentAgentUserId='', 
   }).length;
 }
 function buildGreetingKey(rec, msgType){
-  // v1.2.5-dashboard validation rule:
+  // v1.2.5 validation rule:
   // Validate duplicate control only with the active agent communication leg.
   // Key = Conversation ID + Customer Session ID + Agent Communication ID + Message Type.
   // This allows a reconnected/new live chat leg in the same threaded conversation to send again,
@@ -525,13 +580,36 @@ function cleanGcbText(value){
   if(!text || ['null','undefined','--na--','na','n/a'].includes(text.toLowerCase())) return '';
   return text;
 }
+function getConversationLanguage(attrs={}){
+  return cleanGcbText(attrs.language || attrs.Language || attrs.AFT_Language || attrs.Chat_Language || attrs.SI_Language || attrs.customerLanguage || 'en').toLowerCase();
+}
+function pickLangText(attrs, finalName, enName, arName){
+  const finalValue = cleanGcbText(attrs[finalName] || '');
+  if(finalValue) return finalValue;
+  const lang = getConversationLanguage(attrs);
+  const isArabic = lang === 'ar' || lang === 'arabic' || lang.includes('arabic');
+  return cleanGcbText(isArabic ? (attrs[arName] || attrs[enName] || '') : (attrs[enName] || attrs[arName] || ''));
+}
 function getGcbMessageConfig(attrs={}){
-  return {
-    agentJoinedText: cleanGcbText(attrs.AFT_GCB_AgentJoinedText || ''),
-    supervisorJoinedText: cleanGcbText(attrs.AFT_GCB_SupervisorJoinedText || ''),
-    supervisorKeyword: cleanGcbText(attrs.AFT_GCB_SupervisorKeyword || 'supervisor') || 'supervisor',
-    greetingText: cleanGcbText(attrs.AFT_GCB_GreetingText || '')
+  const supervisorKeyword = cleanGcbText(attrs.AFT_GCB_SupervisorKeyword || attrs.AFT_GCB_SupervisorKeywordDefault || 'supervisor') || 'supervisor';
+  const supportRoles = cleanGcbText(attrs.AFT_GCB_SupportRoles || '');
+  const adminRoles = cleanGcbText(attrs.AFT_GCB_AdminRoles || '');
+  const cfg = {
+    agentJoinedText: pickLangText(attrs, 'AFT_GCB_AgentJoinedText', 'AFT_GCB_AgentJoinedText_EN', 'AFT_GCB_AgentJoinedText_AR'),
+    supervisorJoinedText: pickLangText(attrs, 'AFT_GCB_SupervisorJoinedText', 'AFT_GCB_SupervisorJoinedText_EN', 'AFT_GCB_SupervisorJoinedText_AR'),
+    supervisorKeyword,
+    greetingText: pickLangText(attrs, 'AFT_GCB_GreetingText', 'AFT_GCB_GreetingText_EN', 'AFT_GCB_GreetingText_AR'),
+    supportRolesText: supportRoles,
+    adminRolesText: adminRoles
   };
+  latestGcbAccessConfig = {
+    supportRoles: splitCsvConfig(supportRoles, DEFAULT_SUPPORT_ROLES),
+    adminRoles: splitCsvConfig(adminRoles, DEFAULT_ADMIN_ROLES),
+    supportRolesText: supportRoles,
+    adminRolesText: adminRoles,
+    supervisorKeyword
+  };
+  return cfg;
 }
 function getAgentNickname(){
   return cleanGcbText($('agentNickname')?.textContent || currentUser?.preferredName || currentUser?.name || currentUser?.email || 'Agent') || 'Agent';
@@ -546,12 +624,12 @@ function applyGcbPlaceholders(text){
   return output.trim();
 }
 function getTextSourceLabel(config, key){
-  const map={agentJoinedText:'AFT_GCB_AgentJoinedText', supervisorJoinedText:'AFT_GCB_SupervisorJoinedText', supervisorKeyword:'AFT_GCB_SupervisorKeyword', greetingText:'AFT_GCB_GreetingText'};
+  const map={agentJoinedText:'AFT_GCB_AgentJoinedText / _EN / _AR', supervisorJoinedText:'AFT_GCB_SupervisorJoinedText / _EN / _AR', supervisorKeyword:'AFT_GCB_SupervisorKeywordDefault', greetingText:'AFT_GCB_GreetingText / _EN / _AR'};
   return config?.[key] ? map[key] : 'blank / skipped';
 }
 function getSupervisorKeywords(keywordText){
   // RAKBANK supervisor role rule is now configurable from participant data:
-  // AFT_GCB_SupervisorKeyword. Default remains "supervisor".
+  // AFT_GCB_SupervisorKeywordDefault. Default remains "supervisor".
   const raw=cleanGcbText(keywordText || 'supervisor') || 'supervisor';
   return raw.split(/[;,|]/).map(x=>x.trim().toLowerCase()).filter(Boolean);
 }
@@ -811,7 +889,7 @@ async function maybeAutoSendGreeting(rec){
         continue;
       }
 
-      // v1.2.5-dashboard:
+      // v1.2.5:
       // Build the send key first, then reserve it immediately in runtime memory + localStorage
       // before any async send/read flow. This mirrors the old GCB fast local lock approach,
       // but the key includes the active agent communication ID so reconnect/transfer legs can send again.
@@ -866,6 +944,44 @@ async function sendAgentMessageTest(){
   catch(e){ log('ERROR',e.message); }
 }
 function fillLatestSendTest(){ $('sendConversationId').value=latestConversationId; $('sendCommunicationId').value=latestCommunicationId; }
+
+function firstAvailableConfigRecord(){
+  const list=Array.from(conversations.values()).sort((a,b)=>(b.firstTime||'').localeCompare(a.firstTime||''));
+  return list.find(r=>r && r.gcbParticipantAttributes && Object.keys(r.gcbParticipantAttributes).length) || list[0] || null;
+}
+function normalizeAttrValueForStatus(value){
+  const text=String(value ?? '').trim();
+  if(!text || ['null','undefined','--na--','na','n/a'].includes(text.toLowerCase())) return '';
+  return text;
+}
+function formatConfigValue(value){
+  const text=normalizeAttrValueForStatus(value);
+  if(!text) return '<span class="missingText">[missing]</span>';
+  const short=text.length>160 ? text.slice(0,157)+'...' : text;
+  return escapeHtml(short);
+}
+function buildConfigStatusRows(attrs={}){
+  return EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.map(item=>{
+    const value=normalizeAttrValueForStatus(attrs[item.name]);
+    const ok=!!value;
+    const status=ok ? '<span class="badge sent">OK</span>' : (item.required ? '<span class="badge fail">Missing</span>' : '<span class="badge skip">Optional</span>');
+    return `<tr><td><b>${escapeHtml(item.name)}</b><br><span class="small">${escapeHtml(item.group)}</span></td><td>${formatConfigValue(value)}</td><td>${status}</td></tr>`;
+  }).join('');
+}
+function refreshParticipantConfigStatus(){
+  const rec=firstAvailableConfigRecord();
+  const attrs=(rec && rec.gcbParticipantAttributes) || {};
+  const total=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.length;
+  const required=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required).length;
+  const okRequired=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required && normalizeAttrValueForStatus(attrs[x.name])).length;
+  const missing=required-okRequired;
+  const summary=rec ? `Conversation: ${shortId(rec.conversationId)} | Required OK: ${okRequired}/${required} | Missing: ${missing}` : 'Waiting for active conversation participant data.';
+  const rows=rec ? buildConfigStatusRows(attrs) : '<tr><td class="small" colspan="3">No participant data loaded yet.</td></tr>';
+  const supportBody=$('supportConfigStatus'); if(supportBody) supportBody.innerHTML=rows;
+  const adminBody=$('adminConfigStatus'); if(adminBody) adminBody.innerHTML=rows;
+  const supportSummary=$('supportConfigSummary'); if(supportSummary) supportSummary.textContent=summary;
+  const adminSummary=$('adminConfigSummary'); if(adminSummary) adminSummary.textContent=summary;
+}
 function refreshTables(){
   const list=Array.from(conversations.values()).sort((a,b)=>(b.firstTime||'').localeCompare(a.firstTime||''));
   const active=list.filter(r=>r.state==='JOINED / CONNECTED'); const sent=list.filter(r=>r.greetingStatus==='Sent'); const pending=list.filter(r=>r.greetingStatus==='Pending'||r.greetingStatus==='Sending'); const failed=list.filter(r=>r.greetingStatus==='Failed'||r.greetingStatus==='Skipped');
