@@ -53,3 +53,100 @@
 .configStatusWrap th{top:0;background:#f4f8fc}
 .missingText{color:#b91c1c;font-weight:700}
 @media(max-width:900px){.configStatusWrap{max-height:190px}.configStatusWrap table{font-size:10px}}
+
+
+/* v1.7.2.31 banner layout toggle for management preview.
+   Default = light. Supported values: light | dark.
+   Applied from query parameter bannerLayout/bannerTheme or participant attribute AFT_GCB_BannerLayout / AFT_GCB_BannerTheme. */
+body.banner-dark .header{background:linear-gradient(110deg,#073c8f 0%,#075dbc 44%,#13a6d8 100%);box-shadow:0 8px 20px rgba(7,60,143,.20);border-bottom:1px solid rgba(255,255,255,.18)}
+body.banner-dark .header::before{background:radial-gradient(circle at 78% 45%,rgba(255,255,255,.20),rgba(255,255,255,0) 54%)}
+body.banner-dark .header::after{background:linear-gradient(165deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.15) 46%,rgba(255,255,255,0) 72%)}
+body.banner-dark .header .title h1,
+body.banner-dark .header .title p,
+body.banner-dark .header .version,
+body.banner-dark .header .version b{color:#fff}
+body.banner-dark .header .version{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
+
+body.banner-light .header{background:linear-gradient(90deg,#2d63b2 0%,#2d7cca 42%,#31afe2 72%,#43cae8 100%);box-shadow:0 8px 20px rgba(45,99,178,.16);border-bottom:1px solid rgba(255,255,255,.52)}
+body.banner-light .header::before{right:-6%;top:-48%;width:60%;height:150%;background:radial-gradient(circle at 82% 35%,rgba(255,255,255,.22),rgba(255,255,255,0) 56%)}
+body.banner-light .header::after{height:24px;background:linear-gradient(165deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.18) 44%,rgba(255,255,255,0) 74%)}
+body.banner-light .header .logo{box-shadow:0 8px 16px rgba(31,75,137,.14), inset 0 0 0 1px rgba(255,255,255,.94)}
+body.banner-light .header .title h1,
+body.banner-light .header .title p,
+body.banner-light .header .version,
+body.banner-light .header .version b{color:#fff}
+body.banner-light .header .version{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.34);box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+
+
+/* v1.7.2.33 final compact banner sizing and default light banner.
+   Requested: logo 40px x 40px, padding 0, banner min-height 50px. */
+body.banner-light .header,
+body:not(.banner-dark) .header{
+  background:linear-gradient(105deg,#f8fbff 0%,#eef7ff 58%,#e8f9fb 100%) !important;
+  color:#0f172a !important;
+  min-height:50px !important;
+  padding:6px 12px !important;
+  border-radius:0 0 12px 12px !important;
+  border:1px solid #dbeafe !important;
+  border-left:4px solid #20a7d8 !important;
+  box-shadow:0 4px 12px rgba(15,111,159,.07) !important;
+}
+body.banner-light .header::before,
+body:not(.banner-dark) .header::before{
+  background:radial-gradient(circle at 78% 45%,rgba(32,167,216,.12),rgba(32,167,216,0) 56%) !important;
+}
+body.banner-light .header::after,
+body:not(.banner-dark) .header::after{
+  display:none !important;
+}
+.header .logo,
+body.banner-light .header .logo,
+body.banner-dark .header .logo{
+  width:40px !important;
+  height:40px !important;
+  min-width:40px !important;
+  min-height:40px !important;
+  border-radius:14px !important;
+  padding:0 !important;
+  background:#ffffff !important;
+  box-shadow:0 3px 8px rgba(0,0,0,.10) !important;
+}
+.header .logo img,
+body.banner-light .header .logo img,
+body.banner-dark .header .logo img{
+  width:36px !important;
+  height:36px !important;
+}
+body.banner-light .header .title h1,
+body:not(.banner-dark) .header .title h1{
+  color:#0f172a !important;
+  font-size:15px !important;
+}
+body.banner-light .header .title p,
+body:not(.banner-dark) .header .title p{
+  color:#2563eb !important;
+  font-size:9.5px !important;
+  margin-top:2px !important;
+}
+body.banner-light .header .version,
+body:not(.banner-dark) .header .version{
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  color:#0f6f9f !important;
+  padding:0 !important;
+}
+body.banner-light .header .version b,
+body:not(.banner-dark) .header .version b{
+  color:#0f6f9f !important;
+  font-size:11px !important;
+}
+@media(max-width:900px){
+  .header{min-height:50px !important;padding:6px 10px !important;gap:8px !important;}
+  .brand{gap:8px !important;}
+  .logo{width:40px !important;height:40px !important;padding:0 !important;border-radius:14px !important;}
+  .logo img{width:36px !important;height:36px !important;}
+  .title h1{font-size:14px !important;}
+  .title p{font-size:9px !important;margin-top:2px !important;}
+  .version b{font-size:10.5px !important;}
+}

@@ -71,3 +71,16 @@ Applied participant attributes include:
 - ChatMonitor support/admin role lists, supervisor keyword, and EN/AR joined/greeting messages.
 
 GCB does not call the config Data Table directly; CM/Architect remains responsible for reading the table and setting participant data.
+
+
+Banner layout switch (ChatMonitor)
+- Query parameter: bannerLayout=light or bannerLayout=dark
+- Alternate accepted query parameter: bannerTheme=dark or bannerTheme=light
+- Participant attribute fallback: AFT_GCB_BannerLayout = dark or light
+- Priority: query parameter first, then participant attribute, then default light.
+
+
+ChatMonitor banner default update - v1.7.2.33
+- Default banner layout is light.
+- Use bannerLayout=dark only when dark preview is required.
+- Header compact sizing: min-height 50px, logo 40x40px, logo padding 0.

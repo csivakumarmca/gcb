@@ -29,6 +29,7 @@ const FAST_LOCAL_LOCK_TTL_MS = 15000;
 const DEFAULT_SUPPORT_ROLES = ['RAK IT Admin','RAK Script Admin','RAK Access control','AFT_Support'];
 const DEFAULT_ADMIN_ROLES = ['AFT_Support','RAK IT Admin'];
 let latestGcbAccessConfig = { supportRoles: DEFAULT_SUPPORT_ROLES.slice(), adminRoles: DEFAULT_ADMIN_ROLES.slice(), supervisorKeyword: 'supervisor' };
+let currentBannerLayout = 'light';
 
 const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'HOLD', name:'AFT_GCB_HoldMessageText', required:true},
@@ -65,6 +66,7 @@ const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'CHATMONITOR', name:'AFT_GCB_SupportRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_AdminRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_SupervisorKeywordDefault', required:true},
+  {group:'CHATMONITOR_UI', name:'AFT_GCB_BannerLayout', required:false},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_EN', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_AR', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_SupervisorJoinedText_EN', required:true},
@@ -238,6 +240,37 @@ function updateViewAccess(roleInfo, accessConfig){
 }
 function applyRegion(){ const r = regionMap[$('region').value]; $('apiBase').value = r.api; $('loginBase').value = r.login; }
 function queryParam(name){ return new URLSearchParams(location.search).get(name) || ''; }
+
+function normalizeBannerLayout(value){
+  const v=String(value||'').trim().toLowerCase();
+  return v==='dark' ? 'dark' : 'light';
+}
+function applyBannerLayout(layout, source=''){
+  const finalLayout=normalizeBannerLayout(layout);
+  currentBannerLayout=finalLayout;
+  document.body.classList.remove('banner-dark','banner-light');
+  document.body.classList.add(finalLayout==='light' ? 'banner-light' : 'banner-dark');
+  const hdr=document.querySelector('.header');
+  if(hdr) hdr.setAttribute('data-banner-layout', finalLayout);
+  if(source) log('INFO', {bannerLayoutApplied:finalLayout, source});
+  return finalLayout;
+}
+function getBannerLayoutFromAttrs(attrs={}){
+  return cleanGcbText(attrs.AFT_GCB_BannerLayout || attrs.AFT_GCB_BannerTheme || '');
+}
+function resolveBannerLayoutPreference(){
+  const qp=queryParam('bannerLayout') || queryParam('bannerTheme');
+  if(qp) return {value:normalizeBannerLayout(qp), source:'query'};
+  return {value:'light', source:'default'};
+}
+function refreshBannerLayoutFromAttributes(attrs={}){
+  const qp=queryParam('bannerLayout') || queryParam('bannerTheme');
+  if(qp) return; // explicit query parameter always wins for demo/testing.
+  const attrValue=getBannerLayoutFromAttrs(attrs);
+  if(!attrValue) return;
+  const finalLayout=normalizeBannerLayout(attrValue);
+  if(finalLayout!==currentBannerLayout) applyBannerLayout(finalLayout, 'participantAttribute');
+}
 function getIndexRedirectUri(){
   try{
     const path = location.pathname.replace(/\/[^\/]*$/, '/index.html');
@@ -271,6 +304,8 @@ function loadClientAppParams(){
   $('regionInfo').textContent = regionValue || 'mypurecloud.ie';
   if(queryParam('source')) sessionStorage.setItem('csk_source', queryParam('source'));
   if(queryParam('gcTargetEnv')) sessionStorage.setItem('csk_target_env', queryParam('gcTargetEnv'));
+  const bannerPref = resolveBannerLayoutPreference();
+  applyBannerLayout(bannerPref.value, bannerPref.source);
   updateDashboardStatus();
 }
 async function init(){
@@ -452,6 +487,7 @@ function upsertRecord(conversationId,agent,comm,info,body,customer,participants=
   const recordId=[conversationId, participantId||'NO_PARTICIPANT', communicationId||'NO_COMM'].join('|');
   const existing=conversations.get(recordId)||{};
   const customerAttrs=customer.attributes||{};
+  refreshBannerLayoutFromAttributes(customerAttrs);
   const gcbConfig=getGcbMessageConfig(customerAttrs);
   if(currentUser?.id){ updateViewAccess({roleNames: Array.from(userRoleCache.values()).find(x=>x && Array.isArray(x.roleNames))?.roleNames || []}, gcbConfig); }
   const customerSessionId=getCustomerSessionId(customer, customerAttrs);
@@ -600,7 +636,8 @@ function getGcbMessageConfig(attrs={}){
     supervisorKeyword,
     greetingText: pickLangText(attrs, 'AFT_GCB_GreetingText', 'AFT_GCB_GreetingText_EN', 'AFT_GCB_GreetingText_AR'),
     supportRolesText: supportRoles,
-    adminRolesText: adminRoles
+    adminRolesText: adminRoles,
+    bannerLayout: normalizeBannerLayout(getBannerLayoutFromAttrs(attrs) || 'light')
   };
   latestGcbAccessConfig = {
     supportRoles: splitCsvConfig(supportRoles, DEFAULT_SUPPORT_ROLES),
@@ -971,6 +1008,7 @@ function buildConfigStatusRows(attrs={}){
 function refreshParticipantConfigStatus(){
   const rec=firstAvailableConfigRecord();
   const attrs=(rec && rec.gcbParticipantAttributes) || {};
+  refreshBannerLayoutFromAttributes(attrs);
   const total=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.length;
   const required=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required).length;
   const okRequired=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required && normalizeAttrValueForStatus(attrs[x.name])).length;
