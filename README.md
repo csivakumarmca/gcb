@@ -86,13 +86,23 @@ ChatMonitor banner default update - v1.7.2.33
 - Header compact sizing: min-height 50px, logo 40x40px, logo padding 0.
 
 
-Transfer leg resolver - v1.7.2.45
+Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Re-reads the full messaging conversation when a transfer notification arrives before the new agent communication ID.
 - Selects only the logged-in user's latest agent participant and connected web messaging leg.
 - Does not fall back to another agent participant.
 
 
-## Transfer agent greeting - v1.7.2.45
+## Transfer agent greeting - v1.7.2.47-safe-ui-diagnostics
 - For a non-supervisor Agent 2 transfer, sends Agent Joined followed by Greeting.
 - Keeps transfer-leg resolver and communication-leg duplicate keys unchanged.
 - Supervisor transfers continue to send Supervisor Joined only.
+
+
+## v1.7.2.47 Safe Enhancements
+- Preserves the confirmed v1.7.2.45 Agent 1/Agent 2 joined and greeting transfer logic.
+- Renames Chat Monitor status label to SendMessage.
+- Uses User Role label.
+- Removes duplicate index card title.
+- Adds copy/download diagnostics with concise, masked Agent View output.
+- Adds index download fallback.
+- Adds OAuth/MFA refresh-safe PKCE callback handling.

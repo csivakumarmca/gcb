@@ -150,3 +150,7 @@ body:not(.banner-dark) .header .version b{
   .title p{font-size:9px !important;margin-top:2px !important;}
   .version b{font-size:10.5px !important;}
 }
+
+.agentDiagnosticBox{margin-top:12px;padding:12px;border:1px solid #cfdceb;border-radius:12px;background:#f8fbff;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.agentDiagnosticBox .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+.agentDiagnosticBox .diagnosticStatus{width:100%;margin-top:2px}

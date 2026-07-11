@@ -3,7 +3,7 @@
  * Purpose: Shared OAuth/PKCE helper for GCB pages.
  *          Stores and refreshes browser-side auth state used by direct pages and router fallback.
  */
-/* GCB Shared OAuth / MFA Recovery v1.0.1-router */
+/* GCB Shared OAuth / MFA Recovery v1.0.2-refresh-safe */
 (function (global) {
   "use strict";
 
@@ -13,6 +13,8 @@
   const STORAGE_ORIGINAL_URL = "gcb_gcb_auth_original_url";
   const DEFAULT_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
   const DEFAULT_REGION = "mypurecloud.ie";
+  const STORAGE_PKCE_VERIFIER = "pkce_code_verifier";
+  const STORAGE_PKCE_STATE = "pkce_oauth_state";
 
   function getClientId() {
     const value = C.getParam("clientId") || sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_CLIENT_ID;
@@ -60,7 +62,8 @@
     try {
       sessionStorage.removeItem("gc_access_token");
       sessionStorage.removeItem("gc_token_expires_at");
-      sessionStorage.removeItem("pkce_code_verifier");
+      sessionStorage.removeItem(STORAGE_PKCE_VERIFIER);
+      sessionStorage.removeItem(STORAGE_PKCE_STATE);
     } catch (_) {}
   }
 
@@ -90,7 +93,10 @@
 
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
-    sessionStorage.setItem("pkce_code_verifier", verifier);
+    const state = generateCodeVerifier().slice(0, 48);
+    sessionStorage.setItem(STORAGE_PKCE_VERIFIER, verifier);
+    sessionStorage.setItem(STORAGE_PKCE_STATE, state);
+    sessionStorage.setItem(STORAGE_PKCE_VERIFIER + ":" + state, verifier);
     sessionStorage.setItem(STORAGE_CLIENT_ID, clientId);
     sessionStorage.setItem(STORAGE_REGION, getRegion());
     sessionStorage.setItem(STORAGE_ORIGINAL_URL, options.restoreUrl || global.location.href);
@@ -100,14 +106,39 @@
       "&client_id=" + encodeURIComponent(clientId) +
       "&redirect_uri=" + encodeURIComponent(getRedirectUri()) +
       "&code_challenge=" + encodeURIComponent(challenge) +
-      "&code_challenge_method=S256";
+      "&code_challenge_method=S256" +
+      "&state=" + encodeURIComponent(state);
 
     global.location.href = authUrl;
   }
 
-  async function handleOAuthCallback(code) {
-    const verifier = sessionStorage.getItem("pkce_code_verifier");
-    if (!verifier) throw new Error("Missing PKCE code verifier. Clear session and try again.");
+  function cleanOAuthParameters(urlValue) {
+    try {
+      const cleanUrl = new URL(urlValue || global.location.href, global.location.href);
+      ["code", "state", "error", "error_description"].forEach((name) => cleanUrl.searchParams.delete(name));
+      return cleanUrl.toString();
+    } catch (_) {
+      return String(urlValue || global.location.href)
+        .replace(/([?&])(code|state|error|error_description)=[^&]*/g, "$1")
+        .replace(/[?&]$/, "");
+    }
+  }
+
+  async function handleOAuthCallback(code, callbackState) {
+    const currentToken = getAccessToken();
+    const state = C.safeString(callbackState || C.getParam("state"));
+    const verifier = (state && sessionStorage.getItem(STORAGE_PKCE_VERIFIER + ":" + state)) ||
+      sessionStorage.getItem(STORAGE_PKCE_VERIFIER);
+
+    // Refreshing an already-authenticated callback URL must not fail after the verifier was consumed.
+    if (!verifier && currentToken) return currentToken;
+    if (!verifier) throw new Error("Missing PKCE code verifier. Authentication may already be complete; reload the original GCB page.");
+
+    const expectedState = sessionStorage.getItem(STORAGE_PKCE_STATE);
+    if (state && expectedState && state !== expectedState && !sessionStorage.getItem(STORAGE_PKCE_VERIFIER + ":" + state)) {
+      if (currentToken) return currentToken;
+      throw new Error("OAuth state validation failed. Please start authentication again.");
+    }
 
     const body = new URLSearchParams();
     body.append("grant_type", "authorization_code");
@@ -123,11 +154,18 @@
     });
 
     const result = C.parseJson(await response.text());
-    if (!response.ok) throw new Error("Token request failed: " + JSON.stringify(result));
+    if (!response.ok) {
+      // A refreshed/stale authorization code can be ignored when another GCB frame already obtained a token.
+      const recoveredToken = getAccessToken();
+      if (recoveredToken) return recoveredToken;
+      throw new Error("Token request failed: " + JSON.stringify(result));
+    }
 
     sessionStorage.setItem("gc_access_token", result.access_token || "");
     sessionStorage.setItem("gc_token_expires_at", String(Date.now() + ((result.expires_in || 3600) * 1000)));
-    sessionStorage.removeItem("pkce_code_verifier");
+    sessionStorage.removeItem(STORAGE_PKCE_VERIFIER);
+    sessionStorage.removeItem(STORAGE_PKCE_STATE);
+    if (state) sessionStorage.removeItem(STORAGE_PKCE_VERIFIER + ":" + state);
 
     return result.access_token || "";
   }
@@ -135,17 +173,15 @@
   async function handleOAuthRedirectIfPresent() {
     const code = C.getParam("code");
     if (!code) return false;
-    await handleOAuthCallback(code);
+
     const restoreUrl = sessionStorage.getItem(STORAGE_ORIGINAL_URL) || (global.location.origin + global.location.pathname);
+    const validToken = getAccessToken();
+
+    // MFA may have completed in another Genesys frame. On refresh, reuse that token and only clean the stale callback URL.
+    if (!validToken) await handleOAuthCallback(code, C.getParam("state"));
+
     sessionStorage.removeItem(STORAGE_ORIGINAL_URL);
-    try {
-      const cleanUrl = new URL(restoreUrl, global.location.href);
-      cleanUrl.searchParams.delete("code");
-      cleanUrl.searchParams.delete("state");
-      global.location.replace(cleanUrl.toString());
-    } catch (_) {
-      global.location.replace(restoreUrl.replace(/[?&]code=[^&]+/, "").replace(/[?&]state=[^&]+/, ""));
-    }
+    global.location.replace(cleanOAuthParameters(restoreUrl));
     return true;
   }
 

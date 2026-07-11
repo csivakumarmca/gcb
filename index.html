@@ -70,12 +70,11 @@
   </div>
   <div id="routerCompact" class="gcb-router-compact"><span>Opening GCB page...</span></div>
   <div class="gcb-card">
-    <div class="gcb-title">Genesys Context Bridge (GCB)</div>
-    <div id="gcbStatus" class="gcb-status">Initializing...</div>
+        <div id="gcbStatus" class="gcb-status">Initializing...</div>
 
     <table class="status-table" aria-label="GCB status summary">
       <tr><td>OAuth</td><td id="lineOauth"><span class="status-pending">Pending</span></td></tr>
-      <tr><td>Chat Monitor</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
+      <tr><td>SendMessage</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Hold / Resume</td><td id="lineHoldResume"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Prospects</td><td id="lineProspects"><span class="status-pending">Not run</span></td></tr>
     </table>
@@ -86,6 +85,7 @@
       <button class="gcb-btn" id="refreshLogsBtn" type="button">Refresh</button>
       <button class="gcb-btn" id="toggleLogsBtn" type="button">Show details</button>
       <button class="gcb-btn" id="copyLogsBtn" type="button">Copy details</button>
+      <button class="gcb-btn" id="downloadLogsBtn" type="button">Download details</button>
       <button class="gcb-btn" id="clearLogsBtn" type="button">Clear</button>
     </div>
     <div id="centralDebugLog" class="gcb-debug-log">No logs yet.</div>
@@ -99,7 +99,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.30-participant-status";
+      const ROUTER_VERSION = "v1.7.2.47-safe-ui-diagnostics";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -403,14 +403,28 @@
         const refresh = $("refreshLogsBtn");
         const clear = $("clearLogsBtn");
         const copy = $("copyLogsBtn");
+        const download = $("downloadLogsBtn");
         const toggle = $("toggleLogsBtn");
         const logBox = $("centralDebugLog");
+        function downloadCentralDetails() {
+          const text = window.GcbDebug ? window.GcbDebug.exportText() : "No logs available.";
+          const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+          const a = document.createElement("a");
+          const ts = new Date().toISOString().replace(/[:.]/g, "-");
+          a.href = URL.createObjectURL(blob);
+          a.download = "AFT_GCB_Index_Details_" + ts + ".txt";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+          setStatus("Debug details downloaded.", "success");
+        }
         if (refresh) refresh.onclick = renderCentralLogs;
         if (clear) clear.onclick = function () { if (window.GcbDebug) window.GcbDebug.clear(); renderCentralLogs(); };
+        if (download) download.onclick = downloadCentralDetails;
         if (copy) copy.onclick = async function () {
           const text = window.GcbDebug ? window.GcbDebug.exportText() : "";
           try { await navigator.clipboard.writeText(text); setStatus("Debug details copied.", "success"); }
-          catch (_) { setStatus("Unable to copy automatically. Open details and copy manually.", "warning"); }
+          catch (_) { setStatus("Clipboard is unavailable. Use Download details.", "warning"); }
         };
         if (toggle && logBox) toggle.onclick = function () {
           logBox.classList.toggle("show");
