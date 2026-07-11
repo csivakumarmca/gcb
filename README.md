@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.41-bridge-communication-retry
+Updated package: v1.7.2.42-v33-transfer-core-restored
 
 ## Main changes
 
@@ -117,7 +117,7 @@ ChatMonitor banner default update - v1.7.2.33
 - Added a same-origin interaction-context bridge from the Agent Script GCB index page to ChatMonitor.
 - ChatMonitor now fetches and processes the current conversation snapshot when a notification event is missed.
 - Preserves the canonical runtime ID model introduced in v1.7.2.37.
-- Changed the visible label from **Agent Role** to **User Role**.
+- Changed the visible label from **User Role** to **User Role**.
 - ChatMonitor UI version updated to v1.2.6.
 
 
@@ -135,4 +135,6 @@ ChatMonitor banner default update - v1.7.2.33
 - Uses one canonical customer session ID per conversation, preferring journeyContext.customerSession.id and AFT_GCB_SessionKey over legacy sessionID.
 - Current counters exclude historical disconnected/skipped records.
 - Agent diagnostic exports are concise and exclude raw participant attributes and customer personal/banking data.
-- ChatMonitor UI version updated to v1.2.9.
+- ChatMonitor UI version updated to v1.2.10.
+
+- v1.7.2.42: v33 transfer-safe ChatMonitor core restored; diagnostics and User Role label retained.

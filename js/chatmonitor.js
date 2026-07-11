@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.9';
+const APP_VERSION = 'v1.2.10';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -15,9 +15,6 @@ let userRoleCache = new Map();
 let roleNameById = new Map();
 const runtimeJoinedKeys = new Set();
 const activeSendLocks = new Set();
-const GCB_ACTIVE_INTERACTION_CONTEXT_KEY = 'GCB_ACTIVE_INTERACTION_CONTEXT_V1';
-const BRIDGE_CONTEXT_MAX_AGE_MS = 15 * 60 * 1000;
-const bridgeRecoveryInFlight = new Set();
 const MONITOR_INSTANCE_ID = 'gcb-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10);
 const CROSS_TAB_LOCK_VERIFY_MS = 650;
 const rawLogBuffer = [];
@@ -137,7 +134,7 @@ function buildLogText(){
     `Exported: ${new Date().toISOString()}`,
     `Agent: ${currentUser?.name || '-'} (${currentUser?.id || '-'})`,
     `Nickname: ${$('agentNickname')?.textContent || '-'}`,
-    `User Role: ${$('agentRole')?.textContent || '-'}`, 
+    `User Role: ${$('agentRole')?.textContent || '-'}`,
     `Monitor Status: ${$('monitorStatus')?.textContent || '-'}`,
     `Channel: ${$('channelId')?.textContent || '-'}`,
     ''
@@ -211,6 +208,7 @@ function downloadAgentDiagnostics(){
   setAgentDiagnosticStatus('Diagnostic log downloaded.', 'ok');
   log('OK','Agent diagnostic log downloaded.');
 }
+
 async function copyLogs(){
   const text = buildLogText();
   try{ await navigator.clipboard.writeText(text); log('OK','Admin logs copied to clipboard.'); }
@@ -378,71 +376,8 @@ function loadClientAppParams(){
   applyBannerLayout(bannerPref.value, bannerPref.source);
   updateDashboardStatus();
 }
-
-function readActiveInteractionContext(){
-  try{
-    const raw=localStorage.getItem(GCB_ACTIVE_INTERACTION_CONTEXT_KEY);
-    if(!raw) return null;
-    const ctx=JSON.parse(raw);
-    if(!ctx || !ctx.conversationId) return null;
-    const ts=Date.parse(ctx.updatedAt || '');
-    if(ts && Date.now()-ts > BRIDGE_CONTEXT_MAX_AGE_MS) return null;
-    return ctx;
-  }catch(e){ log('WARN','Unable to read active interaction context: '+e.message); return null; }
-}
-async function recoverConversationFromInteractionContext(ctx, reason='startup'){
-  if(!ctx || !ctx.conversationId || bridgeRecoveryInFlight.has(ctx.conversationId)) return;
-  bridgeRecoveryInFlight.add(ctx.conversationId);
-  const retryDelays=[0,600,1000,1500,2200,3000];
-  try{
-    log('INFO',{interactionBridgeRecoveryStart:true,reason,conversationId:ctx.conversationId,agentCommunicationId:ctx.agentCommunicationId||''});
-    let communicationResolved=false;
-    for(let attempt=0; attempt<retryDelays.length; attempt++){
-      if(retryDelays[attempt]) await delay(retryDelays[attempt]);
-      const snapshot=await getConversationSnapshot(ctx.conversationId);
-      if(!snapshot || !Array.isArray(snapshot.participants)) throw new Error('Conversation snapshot did not contain participants.');
-      handleNotification({eventBody:snapshot, topicName:'gcb.interaction.bridge'});
-      const agent=findCurrentAgentParticipant(snapshot.participants);
-      const comm=agent ? getAgentCommunication(agent) : null;
-      communicationResolved=!!(comm && comm.id && !comm.endTime && !String(comm.state||'').toLowerCase().includes('disconnect'));
-      log(communicationResolved?'OK':'INFO',{
-        interactionBridgeRecoveryAttempt:true,
-        reason,
-        attempt:attempt+1,
-        conversationId:ctx.conversationId,
-        agentParticipantId:agent?.id||'',
-        agentCommunicationId:comm?.id||'',
-        communicationState:comm?.state||'',
-        communicationResolved
-      });
-      if(communicationResolved) break;
-    }
-    if(communicationResolved){
-      log('OK',{interactionBridgeRecoveryComplete:true,reason,conversationId:ctx.conversationId});
-    }else{
-      log('WARN',{interactionBridgeRecoveryPending:true,reason,conversationId:ctx.conversationId,message:'Agent communication ID was not available after bridge retries. Waiting for Genesys notification event.'});
-    }
-  }catch(e){
-    log('WARN',{interactionBridgeRecoveryFailed:true,reason,conversationId:ctx.conversationId,error:e.message});
-  }finally{
-    bridgeRecoveryInFlight.delete(ctx.conversationId);
-  }
-}
-function setupInteractionContextBridge(){
-  const current=readActiveInteractionContext();
-  if(current) setTimeout(()=>recoverConversationFromInteractionContext(current,'startup'),250);
-  window.addEventListener('storage',event=>{
-    if(event.key!==GCB_ACTIVE_INTERACTION_CONTEXT_KEY || !event.newValue) return;
-    try{ recoverConversationFromInteractionContext(JSON.parse(event.newValue),'storage-event'); }catch(e){ log('WARN','Invalid interaction bridge event: '+e.message); }
-  });
-  window.addEventListener('gcb-active-interaction-context',event=>{
-    recoverConversationFromInteractionContext(event.detail,'custom-event');
-  });
-}
-
 async function init(){
   loadClientAppParams();
-  setupInteractionContextBridge();
   $('redirectUri').value = getIndexRedirectUri();
   await handleOAuthReturn();
   useTokenFromUrl(false);
@@ -611,65 +546,19 @@ function getAgentState(agent, selectedComm={}){
   }
   return {state,note};
 }
-function sessionSourceRank(source){
-  const ranks={
-    'journeyContext.customerSession.id':5,
-    'AFT_GCB_SessionKey':4,
-    'sessionID':3,
-    'SI_Summary_Customer_StartDateTime':2,
-    'customer message connectedTime':1,
-    'customer participant connectedTime':1,
-    'fallback':0
-  };
-  return ranks[source] ?? 0;
-}
-function findBestExistingRecord(conversationId, participantId, communicationId){
-  const same=Array.from(conversations.values()).filter(r=>r.conversationId===conversationId && (!participantId || !r.participantId || r.participantId===participantId));
-  if(communicationId){
-    return same.find(r=>r.communicationId===communicationId) || same.find(r=>!r.communicationId) || null;
-  }
-  return same.find(r=>r.communicationId && r.state==='JOINED / CONNECTED') || same.find(r=>r.communicationId) || same[0] || null;
-}
-function propagateBestSessionForConversation(conversationId, sessionId, source){
-  const rank=sessionSourceRank(source);
-  for(const r of conversations.values()){
-    if(r.conversationId!==conversationId) continue;
-    if(rank > sessionSourceRank(r.customerSessionSource)){
-      r.customerSessionId=sessionId;
-      r.customerSessionSource=source;
-    }
-  }
-}
-function removeSupersededNoCommRecords(conversationId, participantId, keepRecordId){
-  for(const [id,r] of conversations.entries()){
-    if(id===keepRecordId) continue;
-    if(r.conversationId===conversationId && (!participantId || !r.participantId || r.participantId===participantId) && !r.communicationId){
-      conversations.delete(id);
-    }
-  }
-}
 function upsertRecord(conversationId,agent,comm,info,body,customer,participants=[]){
   const agentUserId=agent.userId||agent.user?.id||currentUser?.id||'';
   const participantId=agent.id||'';
-  let communicationId=comm.id||'';
-  const bestExisting=findBestExistingRecord(conversationId,participantId,communicationId);
-  if(!communicationId && bestExisting?.communicationId) communicationId=bestExisting.communicationId;
-  // One record per connected agent leg. Bridge snapshots without a communication ID are merged
-  // into the matching notification record instead of creating a false duplicate/failure row.
+  const communicationId=comm.id||'';
+  // One record per connected agent leg. This is important for transfer-back scenarios:
+  // Agent 1 -> Agent 2 -> Agent 1 must send a new joined message for the second Agent 1 leg.
   const recordId=[conversationId, participantId||'NO_PARTICIPANT', communicationId||'NO_COMM'].join('|');
-  const existing=conversations.get(recordId)||bestExisting||{};
+  const existing=conversations.get(recordId)||{};
   const customerAttrs=customer.attributes||{};
   refreshBannerLayoutFromAttributes(customerAttrs);
   const gcbConfig=getGcbMessageConfig(customerAttrs);
   if(currentUser?.id){ updateViewAccess({roleNames: Array.from(userRoleCache.values()).find(x=>x && Array.isArray(x.roleNames))?.roleNames || []}, gcbConfig); }
-  let customerSessionId=getCustomerSessionId(customer, customerAttrs);
-  let customerSessionSource=getCustomerSessionSource(customer,customerAttrs);
-  const sameConversationRecords=Array.from(conversations.values()).filter(r=>r.conversationId===conversationId && r.customerSessionId);
-  const strongestExisting=sameConversationRecords.sort((a,b)=>sessionSourceRank(b.customerSessionSource)-sessionSourceRank(a.customerSessionSource))[0];
-  if(strongestExisting && sessionSourceRank(strongestExisting.customerSessionSource)>sessionSourceRank(customerSessionSource)){
-    customerSessionId=strongestExisting.customerSessionId;
-    customerSessionSource=strongestExisting.customerSessionSource;
-  }
+  const customerSessionId=getCustomerSessionId(customer, customerAttrs);
   const customerSessionStartTime=getCustomerSessionStartTime(customer, customerAttrs);
   const currentAgentConnectedTime=comm.connectedTime||agent.connectedTime||agent.startTime||'';
   const previousAgentCount=getPreviousDifferentAgentCount(participants, agentUserId, participantId, currentAgentConnectedTime, customerSessionStartTime);
@@ -680,30 +569,23 @@ function upsertRecord(conversationId,agent,comm,info,body,customer,participants=
     communicationId:communicationId||existing.communicationId||'', channel:comm.toAddress?.name||comm.fromAddress?.name||customer.messages?.[0]?.toAddress?.name||'WebMessaging',
     mediaType:comm.type||'webmessaging', held:!!comm.held, connectedTime:comm.connectedTime||agent.connectedTime||existing.connectedTime||'',
     greetingStatus:existing.greetingStatus||'Pending', lastAction:info.note || existing.lastAction || '-', raw:body, gcbParticipantAttributes: customerAttrs,
-    customerParticipantId:customer.id||existing.customerParticipantId||'', customerSessionId, customerSessionStartTime, customerSessionSource,
+    customerParticipantId:customer.id||existing.customerParticipantId||'', customerSessionId, customerSessionStartTime, customerSessionSource:getCustomerSessionSource(customer,customerAttrs),
     existingJoinedKeys:collectExistingJoinedKeys(participants) || customerAttrs.AFT_GCB_JoinedSentKeys || customerAttrs.AFT_GCB_GREETING_SENT_KEYS || '', isTransferJoin, previousAgentCount, messageType:existing.messageType||baseMessageType, supervisorRole:false,
     supervisorRoleChecked:false, roleNames:existing.roleNames||'', gcbConfig };
   if(info.state.includes('ENDED')) rec.greetingStatus = rec.greetingStatus==='Sent' ? 'Sent' : 'Skipped';
-  conversations.set(recordId,rec);
-  if(rec.communicationId) removeSupersededNoCommRecords(conversationId,participantId,recordId);
-  propagateBestSessionForConversation(conversationId,customerSessionId,customerSessionSource);
-  latestConversationId=conversationId; latestCommunicationId=rec.communicationId||latestCommunicationId; return rec;
+  conversations.set(recordId,rec); latestConversationId=conversationId; latestCommunicationId=rec.communicationId||latestCommunicationId; return rec;
 }
 function getCustomerSessionId(customer, attrs={}){
-  const messages=(customer.messages||customer.sessions||[]);
-  const journeyMessage=messages.find(m=>m?.journeyContext?.customerSession?.id) || {};
-  const msg=journeyMessage.id ? journeyMessage : (messages[0]||{});
-  return journeyMessage.journeyContext?.customerSession?.id || attrs.AFT_GCB_SessionKey || attrs.sessionID || attrs.SI_Summary_Customer_StartDateTime || msg.connectedTime || customer.connectedTime || 'NO_SESSION';
+  const msg=(customer.messages||customer.sessions||[])[0]||{};
+  return msg.journeyContext?.customerSession?.id || attrs.sessionID || attrs.SI_Summary_Customer_StartDateTime || attrs.SI_Message_UserTypedMessage || msg.connectedTime || customer.connectedTime || 'NO_SESSION';
 }
 function getCustomerSessionStartTime(customer, attrs={}){
   const msg=(customer.messages||customer.sessions||[])[0]||{};
   return msg.connectedTime || customer.connectedTime || attrs.SI_Summary_Customer_StartDateTime || '';
 }
 function getCustomerSessionSource(customer, attrs={}){
-  const messages=(customer.messages||customer.sessions||[]);
-  const msg=messages[0]||{};
-  if(messages.some(m=>m?.journeyContext?.customerSession?.id)) return 'journeyContext.customerSession.id';
-  if(attrs.AFT_GCB_SessionKey) return 'AFT_GCB_SessionKey';
+  const msg=(customer.messages||customer.sessions||[])[0]||{};
+  if(msg.journeyContext?.customerSession?.id) return 'journeyContext.customerSession.id';
   if(attrs.sessionID) return 'sessionID';
   if(attrs.SI_Summary_Customer_StartDateTime) return 'SI_Summary_Customer_StartDateTime';
   if(msg.connectedTime) return 'customer message connectedTime';
@@ -1094,14 +976,7 @@ async function maybeAutoSendGreeting(rec){
     addAdminEvent('NO MESSAGE CONFIGURED',rec,rec.lastAction);
     activeSendLocks.delete(rec.recordId); refreshTables(); return;
   }
-  if(!rec.communicationId){
-    rec.greetingStatus='Pending';
-    rec.lastAction='Waiting for agent communication ID. The notification event will update this record automatically.';
-    activeSendLocks.delete(rec.recordId);
-    conversations.set(rec.recordId,rec);
-    refreshTables();
-    return;
-  }
+  if(!rec.communicationId){ rec.greetingStatus='Failed'; rec.lastAction='Missing agent communication ID.'; activeSendLocks.delete(rec.recordId); refreshTables(); return; }
   if(rec.greetingStatus==='Sent' || rec.greetingStatus==='Sending'){ activeSendLocks.delete(rec.recordId); return; }
 
   const sentTypes=[];
@@ -1215,10 +1090,7 @@ function refreshParticipantConfigStatus(){
 }
 function refreshTables(){
   const list=Array.from(conversations.values()).sort((a,b)=>(b.firstTime||'').localeCompare(a.firstTime||''));
-  const active=list.filter(r=>r.state==='JOINED / CONNECTED');
-  const sent=list.filter(r=>r.greetingStatus==='Sent');
-  const pending=list.filter(r=>r.state==='JOINED / CONNECTED' && (r.greetingStatus==='Pending'||r.greetingStatus==='Sending'||r.greetingStatus==='Checking'));
-  const failed=list.filter(r=>r.state==='JOINED / CONNECTED' && r.greetingStatus==='Failed');
+  const active=list.filter(r=>r.state==='JOINED / CONNECTED'); const sent=list.filter(r=>r.greetingStatus==='Sent'); const pending=list.filter(r=>r.greetingStatus==='Pending'||r.greetingStatus==='Sending'); const failed=list.filter(r=>r.greetingStatus==='Failed'||r.greetingStatus==='Skipped');
   $('mActive').textContent=active.length; $('mSent').textContent=sent.length; $('mPending').textContent=pending.length; $('mFailed').textContent=failed.length; $('sTotal').textContent=list.length; $('sSent').textContent=sent.length; $('sPending').textContent=pending.length; $('sFailed').textContent=failed.length;
   const agentRows=list.map(r=>`<tr><td>${escapeHtml(r.lastTime)}</td><td>${escapeHtml(shortId(r.conversationId))}</td><td>${escapeHtml(shortId(r.customerSessionId||'-'))}</td><td>${escapeHtml(r.isTransferJoin?'Transfer Join':'Initial Join')}</td><td>${greetingBadge(r.greetingStatus)}<br><span class="small">${escapeHtml(r.messageType||'-')}</span></td><td>${escapeHtml(r.lastAction||r.note||'-')}</td></tr>`).join('') || '<tr><td colspan="6" class="small">No active chats detected yet.</td></tr>';
   $('agentTable').innerHTML=agentRows;
