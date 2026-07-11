@@ -104,7 +104,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.50-index-layout-cleanup";
+      const ROUTER_VERSION = "v1.7.2.51-interaction-support-context";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -112,6 +112,30 @@
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const INDEX_PARAMS = new URLSearchParams(window.location.search || "");
       const CURRENT_CONVERSATION_ID = C.safeString(INDEX_PARAMS.get("conversationId") || INDEX_PARAMS.get("gcConversationId") || "");
+      let interactionSupportContext = {
+        loaded: false,
+        conversationStatus: "Not available",
+        customerSessionId: "",
+        agentParticipantId: "",
+        agentCommunicationId: "",
+        communicationState: "Not available",
+        participantConfigSummary: "Not available"
+      };
+
+      const REQUIRED_GCB_ATTRIBUTES = [
+        "AFT_GCB_HoldMessageText","AFT_GCB_ResumeMessageText","AFT_GCB_MaxHoldAttempts","AFT_GCB_MaxHoldTimeSeconds",
+        "AFT_GCB_AutoResumeEnabled","AFT_GCB_CustomerBasedHoldCalculation","AFT_GCB_AlertBlinkEnabled",
+        "AFT_GCB_AlertBlinkDurationMs","AFT_GCB_AlertSoundEnabled","AFT_GCB_AlertSoundRepeatCount",
+        "AFT_GCB_AlertSoundDurationMs","AFT_GCB_AlertSoundGapMs","AFT_GCB_BrowserNotificationEnabled",
+        "AFT_GCB_TaskbarBlinkEnabled","AFT_GCB_TitleBlinkDurationMs","AFT_GCB_NotificationAutoCloseMs",
+        "AFT_GCB_HoldMaxTimeAlertText_EN","AFT_GCB_HoldMaxTimeAlertText_AR","AFT_GCB_HoldMaxAttemptsAlertText_EN",
+        "AFT_GCB_HoldMaxAttemptsAlertText_AR","AFT_GCB_HoldAlertTitle_EN","AFT_GCB_HoldAlertTitle_AR",
+        "AFT_GCB_AutoResumeSentText_EN","AFT_GCB_AutoResumeSentText_AR","AFT_GCB_ProspectsTypeDataTableId",
+        "AFT_GCB_ProspectsMappingDataTableId","AFT_GCB_InteractionOutcomeMultiSelect","AFT_GCB_ContactReasonSeparator",
+        "AFT_GCB_WrapupNameSeparator","AFT_GCB_CreateWrapupIfMissing","AFT_GCB_SupportRoles","AFT_GCB_AdminRoles",
+        "AFT_GCB_SupervisorKeywordDefault","AFT_GCB_AgentJoinedText_EN","AFT_GCB_AgentJoinedText_AR",
+        "AFT_GCB_SupervisorJoinedText_EN","AFT_GCB_SupervisorJoinedText_AR","AFT_GCB_GreetingText_EN","AFT_GCB_GreetingText_AR"
+      ];
       let centralHoldMonitorStarted = false;
       let centralHoldMonitorBusy = false;
 
@@ -429,6 +453,71 @@
         }
       }
 
+      function shortId(value) {
+        const text = C.safeString(value);
+        if (!text) return "Not available";
+        return text.length > 16 ? text.slice(0, 8) + "..." + text.slice(-6) : text;
+      }
+
+      function getCommunicationArrays(participant) {
+        if (!participant) return [];
+        return [participant.messages, participant.message, participant.communications, participant.chats]
+          .filter(Array.isArray)
+          .reduce(function (all, items) { return all.concat(items); }, []);
+      }
+
+      function pickBestCommunication(participant) {
+        const items = getCommunicationArrays(participant).filter(function (item) {
+          return item && C.safeString(item.type).toLowerCase() === "webmessaging";
+        });
+        if (!items.length) return null;
+        return items.find(function (item) { return ["connected", "alerting", "dialing"].includes(C.safeString(item.state).toLowerCase()); })
+          || items.slice().sort(function (a, b) {
+            return new Date(b.connectedTime || b.startTime || 0) - new Date(a.connectedTime || a.startTime || 0);
+          })[0];
+      }
+
+      function resolveCustomerSession(customerParticipant, customerCommunication) {
+        return C.safeString(customerCommunication && customerCommunication.journeyContext && customerCommunication.journeyContext.customerSession && customerCommunication.journeyContext.customerSession.id)
+          || C.safeString(customerParticipant && customerParticipant.attributes && customerParticipant.attributes.AFT_GCB_SessionKey)
+          || C.safeString(customerParticipant && customerParticipant.attributes && customerParticipant.attributes.sessionID);
+      }
+
+      async function loadInteractionSupportContext(token, user) {
+        if (!CURRENT_CONVERSATION_ID) return;
+        try {
+          const conversation = await Api.getMessageConversation(token, CURRENT_CONVERSATION_ID);
+          const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
+          const customerParticipant = participants.find(function (p) {
+            return ["customer", "external"].includes(C.safeString(p && p.purpose).toLowerCase());
+          }) || null;
+          const agentParticipant = participants.find(function (p) {
+            return C.safeString(p && p.purpose).toLowerCase() === "agent" && C.safeString(p && p.userId) === C.safeString(user && user.id);
+          }) || participants.filter(function (p) { return C.safeString(p && p.purpose).toLowerCase() === "agent"; })
+            .sort(function (a, b) { return new Date(b.connectedTime || 0) - new Date(a.connectedTime || 0); })[0] || null;
+          const customerCommunication = pickBestCommunication(customerParticipant);
+          const agentCommunication = pickBestCommunication(agentParticipant);
+          const customerAttrs = customerParticipant && customerParticipant.attributes ? customerParticipant.attributes : {};
+          const configOk = REQUIRED_GCB_ATTRIBUTES.filter(function (name) { return C.safeString(customerAttrs[name]).trim() !== ""; }).length;
+          const configMissing = REQUIRED_GCB_ATTRIBUTES.length - configOk;
+          const agentState = C.safeString(agentCommunication && agentCommunication.state).toLowerCase();
+          const customerState = C.safeString(customerCommunication && customerCommunication.state).toLowerCase();
+          interactionSupportContext = {
+            loaded: true,
+            conversationStatus: (agentState === "connected" && customerState === "connected") ? "Connected" : (conversation && conversation.endTime ? "Disconnected" : "Active / awaiting connected leg"),
+            customerSessionId: resolveCustomerSession(customerParticipant, customerCommunication),
+            agentParticipantId: C.safeString(agentParticipant && agentParticipant.id),
+            agentCommunicationId: C.safeString(agentCommunication && agentCommunication.id),
+            communicationState: C.safeString(agentCommunication && agentCommunication.state) || "Missing",
+            participantConfigSummary: configOk + "/" + REQUIRED_GCB_ATTRIBUTES.length + " OK" + (configMissing ? " - Missing: " + configMissing : "")
+          };
+          debugLog("INFO", "INDEX_INTERACTION_CONTEXT_READY", "conversationId=" + CURRENT_CONVERSATION_ID + " | agentCommunicationId=" + interactionSupportContext.agentCommunicationId + " | customerSessionId=" + interactionSupportContext.customerSessionId);
+        } catch (error) {
+          interactionSupportContext = Object.assign({}, interactionSupportContext, { loaded: false, conversationStatus: "Unable to load" });
+          debugLog("WARN", "INDEX_INTERACTION_CONTEXT_FAILED", error && error.message ? error.message : String(error));
+        }
+      }
+
       function deriveUserRole(user) {
         const roles = [];
         try {
@@ -461,10 +550,12 @@
           "Hold / Resume Status: " + statusText(statuses.holdResume, "Not run"),
           "Prospects Status: " + statusText(statuses.prospects, "Not run"),
           "Conversation ID: " + (runtime.conversationId || "Missing"),
-          "Agent Participant ID: " + (runtime.agentParticipantId || "Missing"),
-          "Agent Communication ID: " + (runtime.agentCommunicationId || "Missing"),
-          "Customer Participant ID: " + (runtime.customerParticipantId || "Missing"),
-          "Customer Communication ID: " + (runtime.customerCommunicationId || "Missing"),
+          "Conversation Status: " + interactionSupportContext.conversationStatus,
+          "Customer Session ID: " + (interactionSupportContext.customerSessionId || "Not available"),
+          "Agent Participant ID: " + (interactionSupportContext.agentParticipantId || runtime.agentParticipantId || "Not available"),
+          "Agent Communication ID: " + (interactionSupportContext.agentCommunicationId || runtime.agentCommunicationId || "Not available"),
+          "Communication State: " + interactionSupportContext.communicationState,
+          "Participant Config: " + interactionSupportContext.participantConfigSummary,
           "Last API: " + (health.lastApi ? [health.lastApi.time, health.lastApi.message].filter(Boolean).join(" - ") : "None"),
           "Last Error: " + (health.lastError ? [health.lastError.time, health.lastError.message].filter(Boolean).join(" - ") : "None"),
           "",
@@ -493,18 +584,21 @@
         const params = new URLSearchParams(window.location.search || "");
         meta.innerHTML = "";
         const rows = [
+          ["Conversation Status", interactionSupportContext.conversationStatus],
+          ["Customer Session", shortId(interactionSupportContext.customerSessionId)],
+          ["Agent Participant", shortId(interactionSupportContext.agentParticipantId)],
+          ["Agent Communication", shortId(interactionSupportContext.agentCommunicationId)],
+          ["Communication State", interactionSupportContext.communicationState],
+          ["Participant Config", interactionSupportContext.participantConfigSummary],
           ["Build", ROUTER_VERSION],
           ["Region", Auth.getRegion()],
           ["Environment", params.get("gcTargetEnv") || "Not provided"],
           ["Client", mask(Auth.getClientId())],
           ["Conversation", mask(params.get("conversationId") || params.get("gcConversationId"))],
-          ["Page", params.get("page") || params.get("module") || "None"],
-          ["Source", params.get("source") || "Not provided"],
-          ["Loaded", new Date().toLocaleString()]
+          ["Page", params.get("page") || params.get("module") || "None"]
         ];
         if (user) {
           rows.push(["User", C.safeString(user.name || user.email || user.id) || "Validated"]);
-          rows.push(["User Role", deriveUserRole(user)]);
           rows.push(["User ID", mask(user.id)]);
         }
         rows.forEach(function (r) {
@@ -609,6 +703,7 @@
           throw error;
         }
 
+        await loadInteractionSupportContext(token, user);
         renderMeta(user);
         if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "pending", "Waiting for Hold/Resume action.");
         renderStatusLines();
