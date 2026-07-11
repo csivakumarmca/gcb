@@ -194,7 +194,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         if (code) {
           try {
             setRuntimeStatus("Completing Genesys login...");
-            await handleOAuthCallback(code);
+            const existingToken = getAccessToken();
+            if (!existingToken) await handleOAuthCallback(code, params.get("state"));
             sessionStorage.removeItem(STORAGE_PROSPECTS_AUTO_REFRESH_BLOCKED);
             const originalQuery = sessionStorage.getItem(STORAGE_PROSPECTS_ORIGINAL_QUERY) || "";
             sessionStorage.removeItem(STORAGE_PROSPECTS_ORIGINAL_QUERY);
@@ -1239,13 +1240,17 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         sessionStorage.removeItem("gc_access_token");
         sessionStorage.removeItem("gc_token_expires_at");
         sessionStorage.removeItem("pkce_code_verifier");
+        sessionStorage.removeItem("pkce_oauth_state");
         await startPKCELogin();
       }
 
       async function startPKCELogin() {
         const codeVerifier = generateCodeVerifier();
         const codeChallenge = await generateCodeChallenge(codeVerifier);
+        const oauthState = generateCodeVerifier().slice(0, 48);
         sessionStorage.setItem("pkce_code_verifier", codeVerifier);
+        sessionStorage.setItem("pkce_oauth_state", oauthState);
+        sessionStorage.setItem("pkce_code_verifier:" + oauthState, codeVerifier);
         sessionStorage.setItem(STORAGE_CLIENT_ID, OAUTH_CLIENT_ID);
         sessionStorage.setItem(STORAGE_REGION, GENESYS_REGION);
         sessionStorage.setItem(STORAGE_PROSPECTS_ORIGINAL_QUERY, buildQueryWithoutOAuthCode());
@@ -1254,12 +1259,21 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           `&client_id=${encodeURIComponent(OAUTH_CLIENT_ID)}` +
           `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
           `&code_challenge=${encodeURIComponent(codeChallenge)}` +
-          `&code_challenge_method=S256`;
+          `&code_challenge_method=S256` +
+          `&state=${encodeURIComponent(oauthState)}`;
       }
 
-      async function handleOAuthCallback(code) {
-        const codeVerifier = sessionStorage.getItem("pkce_code_verifier");
-        if (!codeVerifier) throw new Error("Missing PKCE code verifier.");
+      async function handleOAuthCallback(code, callbackState) {
+        const stateValue = String(callbackState || "").trim();
+        const codeVerifier = (stateValue && sessionStorage.getItem("pkce_code_verifier:" + stateValue)) || sessionStorage.getItem("pkce_code_verifier");
+        const existingToken = getAccessToken();
+        if (!codeVerifier && existingToken) return existingToken;
+        if (!codeVerifier) throw new Error("Missing PKCE code verifier. Authentication may already be complete; reload the Prospects page.");
+        const expectedState = sessionStorage.getItem("pkce_oauth_state");
+        if (stateValue && expectedState && stateValue !== expectedState && !sessionStorage.getItem("pkce_code_verifier:" + stateValue)) {
+          if (existingToken) return existingToken;
+          throw new Error("OAuth state validation failed. Please start authentication again.");
+        }
         const body = new URLSearchParams();
         body.append("grant_type", "authorization_code");
         body.append("client_id", OAUTH_CLIENT_ID);
@@ -1272,9 +1286,17 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           body,
         });
         const result = parseJson(await response.text());
-        if (!response.ok) throw new Error("Token request failed: " + JSON.stringify(result));
+        if (!response.ok) {
+          const recoveredToken = getAccessToken();
+          if (recoveredToken) return recoveredToken;
+          throw new Error("Token request failed: " + JSON.stringify(result));
+        }
         sessionStorage.setItem("gc_access_token", result.access_token);
         sessionStorage.setItem("gc_token_expires_at", String(Date.now() + ((result.expires_in || 3600) * 1000)));
+        sessionStorage.removeItem("pkce_code_verifier");
+        sessionStorage.removeItem("pkce_oauth_state");
+        if (stateValue) sessionStorage.removeItem("pkce_code_verifier:" + stateValue);
+        return result.access_token || "";
       }
 
       function getAccessToken() {
@@ -1311,6 +1333,9 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       function buildQueryWithoutOAuthCode() {
         const next = new URLSearchParams(window.location.search);
         next.delete("code");
+        next.delete("state");
+        next.delete("error");
+        next.delete("error_description");
         return next.toString() ? "?" + next.toString() : "";
       }
 

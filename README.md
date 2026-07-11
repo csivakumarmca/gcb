@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.30-participant-status
+Updated package: v1.7.2.34-mfa-refresh-recovery
 
 ## Main changes
 
@@ -84,3 +84,11 @@ ChatMonitor banner default update - v1.7.2.33
 - Default banner layout is light.
 - Use bannerLayout=dark only when dark preview is required.
 - Header compact sizing: min-height 50px, logo 40x40px, logo padding 0.
+
+
+## v1.7.2.34 MFA refresh recovery update
+- Preserves PKCE verifier by OAuth state during MFA.
+- Reuses an already valid Genesys token when the callback URL is refreshed after MFA.
+- Removes stale OAuth code/state parameters before restoring the GCB or Prospects page.
+- Prevents false `Missing PKCE code verifier` failures after authentication completed in another Genesys frame.
+- Keeps all v1.7.2.33 light compact banner behavior unchanged.
