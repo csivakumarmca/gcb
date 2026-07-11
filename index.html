@@ -104,12 +104,13 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.51-interaction-support-context";
+      const ROUTER_VERSION = "v1.7.2.52-post-mfa-active-recovery";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+      const GCB_INTERACTION_CONTEXTS_KEY = "AFT_GCB_INTERACTION_CONTEXTS_V1";
       const INDEX_PARAMS = new URLSearchParams(window.location.search || "");
       const CURRENT_CONVERSATION_ID = C.safeString(INDEX_PARAMS.get("conversationId") || INDEX_PARAMS.get("gcConversationId") || "");
       let interactionSupportContext = {
@@ -512,9 +513,38 @@
             participantConfigSummary: configOk + "/" + REQUIRED_GCB_ATTRIBUTES.length + " OK" + (configMissing ? " - Missing: " + configMissing : "")
           };
           debugLog("INFO", "INDEX_INTERACTION_CONTEXT_READY", "conversationId=" + CURRENT_CONVERSATION_ID + " | agentCommunicationId=" + interactionSupportContext.agentCommunicationId + " | customerSessionId=" + interactionSupportContext.customerSessionId);
+          publishInteractionContext();
         } catch (error) {
           interactionSupportContext = Object.assign({}, interactionSupportContext, { loaded: false, conversationStatus: "Unable to load" });
           debugLog("WARN", "INDEX_INTERACTION_CONTEXT_FAILED", error && error.message ? error.message : String(error));
+        }
+      }
+
+
+      function publishInteractionContext() {
+        if (!CURRENT_CONVERSATION_ID) return;
+        try {
+          const raw = localStorage.getItem(GCB_INTERACTION_CONTEXTS_KEY);
+          const map = raw ? JSON.parse(raw) : {};
+          const safeMap = map && typeof map === "object" && !Array.isArray(map) ? map : {};
+          safeMap[CURRENT_CONVERSATION_ID] = {
+            conversationId: CURRENT_CONVERSATION_ID,
+            agentParticipantId: interactionSupportContext.agentParticipantId || "",
+            agentCommunicationId: interactionSupportContext.agentCommunicationId || "",
+            customerSessionId: interactionSupportContext.customerSessionId || "",
+            communicationState: interactionSupportContext.communicationState || "",
+            updatedAt: new Date().toISOString(),
+            source: "index.html"
+          };
+          const entries = Object.values(safeMap).sort(function(a,b){
+            return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+          }).slice(0, 20);
+          const trimmed = {};
+          entries.forEach(function(item){ if(item && item.conversationId) trimmed[item.conversationId] = item; });
+          localStorage.setItem(GCB_INTERACTION_CONTEXTS_KEY, JSON.stringify(trimmed));
+          debugLog("INFO", "INDEX_INTERACTION_CONTEXT_PUBLISHED", "conversationId=" + CURRENT_CONVERSATION_ID);
+        } catch (error) {
+          debugLog("WARN", "INDEX_INTERACTION_CONTEXT_PUBLISH_FAILED", error && error.message ? error.message : String(error));
         }
       }
 
@@ -620,6 +650,22 @@
         renderStatusLines();
       }
 
+
+      function legacyCopyText(text) {
+        try {
+          const area = document.createElement("textarea");
+          area.value = text;
+          area.setAttribute("readonly", "readonly");
+          area.style.position = "fixed";
+          area.style.opacity = "0";
+          document.body.appendChild(area);
+          area.select();
+          const ok = document.execCommand && document.execCommand("copy");
+          area.remove();
+          return !!ok;
+        } catch (_) { return false; }
+      }
+
       function setupButtons() {
         const refresh = $("refreshLogsBtn");
         const clear = $("clearLogsBtn");
@@ -630,22 +676,39 @@
         function downloadCentralDetails() {
           const text = buildIndexDiagnosticReport();
           const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           const ts = new Date().toISOString().replace(/[:.]/g, "-");
-          a.href = URL.createObjectURL(blob);
+          a.href = url;
           a.download = "AFT_GCB_Index_Details_" + ts + ".txt";
+          a.style.display = "none";
           document.body.appendChild(a);
-          a.click();
-          setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-          setStatus("Debug details downloaded.", "success");
+          try {
+            a.click();
+            setStatus("Debug details download requested.", "success");
+          } catch (error) {
+            const opened = window.open(url, "_blank", "noopener");
+            if (opened) setStatus("Download opened in a new tab. Save the text file from there.", "warning");
+            else {
+              const logBox = $("centralDebugLog");
+              if (logBox) { logBox.textContent = text; logBox.classList.add("show"); }
+              setStatus("Browser blocked the download. Details are shown below for manual save.", "warning");
+            }
+          }
+          setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 30000);
         }
         if (refresh) refresh.onclick = renderCentralLogs;
         if (clear) clear.onclick = function () { if (window.GcbDebug) window.GcbDebug.clear(); renderCentralLogs(); };
         if (download) download.onclick = downloadCentralDetails;
         if (copy) copy.onclick = async function () {
           const text = buildIndexDiagnosticReport();
-          try { await navigator.clipboard.writeText(text); setStatus("Debug details copied.", "success"); }
-          catch (_) { setStatus("Clipboard is unavailable. Use Download details.", "warning"); }
+          try {
+            await navigator.clipboard.writeText(text);
+            setStatus("Debug details copied.", "success");
+          } catch (_) {
+            if (legacyCopyText(text)) setStatus("Debug details copied using browser fallback.", "success");
+            else setStatus("Clipboard is unavailable in the Genesys frame. Use Download details.", "warning");
+          }
         };
         if (toggle && logBox) toggle.onclick = function () {
           logBox.classList.toggle("show");

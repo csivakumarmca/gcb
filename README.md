@@ -128,3 +128,10 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Shortened Last API and Last Error values in the narrow status panel while retaining full values in copied/downloaded diagnostics.
 - Improved text wrapping to prevent overlap in narrow Genesys interaction-widget layouts.
 - ChatMonitor send, greeting, and transfer logic is unchanged.
+
+
+## v1.7.2.52 post-MFA active interaction recovery
+- Preserves the confirmed notification-driven Agent 1 / Agent 2 transfer and duplicate-control core.
+- Interaction index pages publish recent conversation IDs to same-origin localStorage.
+- After ChatMonitor OAuth/MFA completion and notification subscription, it performs a one-time fetch of recent active interaction conversations and passes valid connected snapshots into the existing processing function.
+- Adds clipboard legacy fallback and stronger index diagnostic download fallback.

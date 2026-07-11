@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.12';
+const APP_VERSION = 'v1.2.16';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -26,6 +26,8 @@ let dashLastError = '-';
 const FAST_LOCAL_LOCK_PREFIX = 'AFT_GCB_FAST_LOCK_';
 const FAST_LOCAL_DONE_PREFIX = 'AFT_GCB_FAST_DONE_';
 const FAST_LOCAL_LOCK_TTL_MS = 15000;
+const GCB_INTERACTION_CONTEXTS_KEY = 'AFT_GCB_INTERACTION_CONTEXTS_V1';
+const POST_MFA_RECOVERY_MAX_AGE_MS = 30 * 60 * 1000;
 const DEFAULT_SUPPORT_ROLES = ['RAK IT Admin','RAK Script Admin','RAK Access control','AFT_Support'];
 const DEFAULT_ADMIN_ROLES = ['AFT_Support','RAK IT Admin'];
 let latestGcbAccessConfig = { supportRoles: DEFAULT_SUPPORT_ROLES.slice(), adminRoles: DEFAULT_ADMIN_ROLES.slice(), supervisorKeyword: 'supervisor' };
@@ -181,6 +183,18 @@ function buildAgentDiagnosticText(){
   ].join('\n');
   return summary + '=== Conversation Greeting Status ===\n' + agentTableText + '\n\n=== Recent Concise Monitoring Logs ===\n' + (safeLogs || 'No concise logs available.');
 }
+
+function legacyCopyText(text){
+  try{
+    const area=document.createElement('textarea');
+    area.value=text; area.setAttribute('readonly','readonly');
+    area.style.position='fixed'; area.style.opacity='0';
+    document.body.appendChild(area); area.select();
+    const ok=document.execCommand&&document.execCommand('copy');
+    area.remove(); return !!ok;
+  }catch(_){ return false; }
+}
+
 async function copyAgentDiagnostics(){
   const text = buildAgentDiagnosticText();
   try{
@@ -188,8 +202,13 @@ async function copyAgentDiagnostics(){
     setAgentDiagnosticStatus('Diagnostic details copied.', 'ok');
     log('OK','Agent diagnostic details copied to clipboard.');
   }catch(e){
-    setAgentDiagnosticStatus('Clipboard is unavailable. Use Download Diagnostic Logs.', 'warn');
-    log('WARN','Agent diagnostic clipboard copy failed. Download remains available. '+(e?.message || e));
+    if(legacyCopyText(text)){
+      setAgentDiagnosticStatus('Diagnostic details copied using browser fallback.', 'ok');
+      log('OK','Agent diagnostic details copied using browser fallback.');
+    } else {
+      setAgentDiagnosticStatus('Clipboard is unavailable in the Genesys frame. Use Download Diagnostic Logs.', 'warn');
+      log('WARN','Agent diagnostic clipboard copy failed. Download remains available. '+(e?.message || e));
+    }
   }
 }
 function downloadAgentDiagnostics(){
@@ -209,7 +228,7 @@ function downloadAgentDiagnostics(){
 async function copyLogs(){
   const text = buildLogText();
   try{ await navigator.clipboard.writeText(text); log('OK','Admin logs copied to clipboard.'); }
-  catch(e){ log('WARN','Clipboard copy failed. Use Download Logs instead. '+e.message); }
+  catch(e){ if(legacyCopyText(text)) log('OK','Admin logs copied using browser fallback.'); else log('WARN','Clipboard copy failed. Use Download Logs instead. '+e.message); }
 }
 function downloadLogs(){
   const text = buildLogText();
@@ -485,6 +504,39 @@ async function getMe(){
     await refreshLoggedInUserRoleDisplay();
   }catch(e){ log('ERROR',e.message); }
 }
+
+async function recoverPublishedActiveInteractions(reason='post-mfa-startup'){
+  let contexts=[];
+  try{
+    const raw=localStorage.getItem(GCB_INTERACTION_CONTEXTS_KEY);
+    const map=raw?JSON.parse(raw):{};
+    contexts=Object.values(map&&typeof map==='object'&&!Array.isArray(map)?map:{});
+  }catch(e){ log('WARN',{activeInteractionRecoveryReadFailed:true,reason,error:e.message}); return; }
+  const nowMs=Date.now();
+  const recent=contexts.filter(item=>{
+    if(!item?.conversationId)return false;
+    const age=nowMs-new Date(item.updatedAt||0).getTime();
+    return Number.isFinite(age)&&age>=0&&age<=POST_MFA_RECOVERY_MAX_AGE_MS;
+  });
+  log('INFO',{activeInteractionRecoveryStart:true,reason,candidateCount:recent.length});
+  for(const item of recent){
+    try{
+      const snapshot=await getConversationSnapshot(item.conversationId);
+      const participants=snapshot?.participants||[];
+      const agent=findCurrentAgentParticipant(participants);
+      const comm=agent?getAgentCommunication(agent):{};
+      const info=agent?getAgentState(agent,comm):{state:'',note:''};
+      log('INFO',{activeInteractionRecoveryCheck:true,reason,conversationId:item.conversationId,agentParticipantId:agent?.id||'',agentCommunicationId:comm?.id||'',communicationState:comm?.state||'',resolved:!!(agent&&comm?.id&&info.state==='JOINED / CONNECTED')});
+      if(agent&&comm?.id&&info.state==='JOINED / CONNECTED'){
+        processConversationBody(snapshot,'post-mfa-recovery');
+      }
+    }catch(e){
+      log('WARN',{activeInteractionRecoveryFailed:true,reason,conversationId:item.conversationId,error:e.message});
+    }
+  }
+  log('OK',{activeInteractionRecoveryComplete:true,reason,candidateCount:recent.length});
+}
+
 async function startMonitor(){
   try{
     if(!currentUser) await getMe(); if(!currentUser?.id) throw new Error('Cannot start without logged-in user ID.'); await stopMonitor(false);
@@ -492,7 +544,7 @@ async function startMonitor(){
     const topic=`v2.users.${currentUser.id}.conversations`;
     await api(`/api/v2/notifications/channels/${channel.id}/subscriptions`,{method:'PUT',body:JSON.stringify([{id:topic}])}); log('OK',`Subscribed to ${topic}`);
     notifySocket=new WebSocket(channel.connectUri);
-    notifySocket.onopen=()=>{ $('monitorStatus').textContent='Running'; updateDashboardStatus(); log('OK','Notification WebSocket connected.'); addAgentMsg('CSK System','Monitor running. Waiting for assigned/connected chats.','system'); };
+    notifySocket.onopen=()=>{ $('monitorStatus').textContent='Running'; updateDashboardStatus(); log('OK','Notification WebSocket connected.'); addAgentMsg('CSK System','Monitor running. Waiting for assigned/connected chats.','system'); recoverPublishedActiveInteractions('post-mfa-subscription').catch(e=>log('WARN',{activeInteractionRecoveryUnhandled:true,error:e.message})); };
     notifySocket.onerror=()=>log('ERROR','Notification WebSocket error. Check token, permissions, and network.');
     notifySocket.onclose=(e)=>{ $('monitorStatus').textContent='Stopped'; updateDashboardStatus(); log('WARN',`Notification WebSocket closed. code=${e.code} reason=${e.reason||'-'}`); };
     notifySocket.onmessage=(event)=>{ let msg; try{msg=JSON.parse(event.data)}catch(e){msg=event.data} const isHeartbeat = msg && msg.topicName==='channel.metadata' && msg.eventBody && msg.eventBody.message==='WebSocket Heartbeat'; if($('adminVerbose').checked && !isHeartbeat) log('INFO',msg); handleNotification(msg); };
