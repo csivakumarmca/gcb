@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.35-sendmessage-label
+Updated package: v1.7.2.37-canonical-runtime-ids
 
 ## Main changes
 
@@ -98,3 +98,16 @@ ChatMonitor banner default update - v1.7.2.33
 - Changed the GCB index status-dashboard display label from **Chat Monitor** to **SendMessage**.
 - Internal ChatMonitor page, routing, notification listener, IDs, and business logic remain unchanged.
 - Retains the v1.7.2.34 MFA/PKCE refresh-recovery correction and compact light-banner behavior.
+
+
+## v1.7.2.37 Index title cleanup
+
+- Removed the duplicate **Genesys Context Bridge (GCB)** title from the index status card.
+- Retained the compact top banner title and all existing OAuth, SendMessage, Hold/Resume, Prospects, and status logic unchanged.
+
+
+## v1.7.2.37 - Canonical Runtime IDs
+- Removed legacy URL aliases `communicationId` and `participantId`.
+- Standardized on `agentCommunicationId` and `agentParticipantId`.
+- Added optional `customerParticipantId` alongside `customerCommunicationId`.
+- Updated Prospects, HoldResume, HoldTimer, and shared Genesys API context handling.

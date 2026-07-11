@@ -19,8 +19,10 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED = "rakbank_prospects_load_recovery_attempted";
       const context = {
         conversationId: getParam("conversationId"),
-        communicationId: getParam("communicationId"),
-        participantId: getParam("participantId"),
+        agentCommunicationId: getParam("agentCommunicationId"),
+        agentParticipantId: getParam("agentParticipantId"),
+        customerCommunicationId: getParam("customerCommunicationId"),
+        customerParticipantId: getParam("customerParticipantId"),
       };
 
       const OAUTH_CLIENT_ID = getParam("clientId") || sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_OAUTH_CLIENT_ID;
@@ -30,8 +32,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const SEARCH_DEBUG_ATTRIBUTE_NAME = "AFT_DFN_LOG_SEARCH_PROSPECT_DROPDOWN";
       const ASSIGN_DEBUG_ATTRIBUTE_NAME = "AFT_DFN_LOG_ASSIGN_WRAPUP_CODE_TO_INTERACTION";
       const DEBUG_ATTRIBUTE_MAX_LENGTH = 20000;
-      const draftKey = `RAK_PROSPECTS_DRAFT_${context.conversationId}_${context.communicationId}`;
-      const submitKey = `RAK_PROSPECTS_SUBMITTED_${context.conversationId}_${context.communicationId}`;
+      const draftKey = `RAK_PROSPECTS_DRAFT_${context.conversationId}_${context.agentCommunicationId}`;
+      const submitKey = `RAK_PROSPECTS_SUBMITTED_${context.conversationId}_${context.agentCommunicationId}`;
 
       const actionConfig = {
         all: getParam("prospectsDataActionId"),
@@ -150,7 +152,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         participants.forEach((p) => { if (p && p.attributes) Object.assign(output, p.attributes); });
         participants.forEach((p) => {
           const pid = String((p && p.id) || "").trim();
-          if (pid && pid === context.participantId && p.attributes) Object.assign(output, p.attributes);
+          if (pid && pid === context.agentParticipantId && p.attributes) Object.assign(output, p.attributes);
         });
         return output;
       }
@@ -275,8 +277,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           `interactionOutcomeMultiSelect: ${String(INTERACTION_OUTCOME_MULTI_SELECT)}`,
           `loadRecoveryAttempted: ${sessionStorage.getItem(STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED) || "false"}`,
           `conversationId: ${context.conversationId || "[missing]"}`,
-          `communicationId: ${context.communicationId || "[missing]"}`,
-          `participantId: ${context.participantId || "[missing]"}`,
+          `agentCommunicationId: ${context.agentCommunicationId || "[missing]"}`,
+          `agentParticipantId: ${context.agentParticipantId || "[missing]"}`,
           `region: ${GENESYS_REGION || "[missing]"}`,
           `clientId: ${OAUTH_CLIENT_ID || "[missing]"}`,
           `typeDataTableId: ${dataTableConfig.types || "[missing]"}`,
@@ -430,8 +432,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       function buildActionInput(extra = {}) {
         return {
           conversationId: context.conversationId,
-          communicationId: context.communicationId,
-          participantId: context.participantId,
+          agentCommunicationId: context.agentCommunicationId,
+          agentParticipantId: context.agentParticipantId,
           typeOfInteraction: typeSelect.value,
           ...extra,
         };
@@ -844,7 +846,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       }
 
       function saveDraft() {
-        if (!context.conversationId || !context.communicationId) return;
+        if (!context.conversationId || !context.agentCommunicationId) return;
         const contacts = getSelectedOptions("contactReason");
         const outcomes = getSelectedOptions("outcome");
         const draft = {
@@ -919,7 +921,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           "SEARCH_PROSPECT_DROPDOWN",
           `version::${APP_VERSION || "(blank)"}`,
           `conversationId::${context.conversationId || "(blank)"}`,
-          `participantId::${context.participantId || "(blank)"}`,
+          `agentParticipantId::${context.agentParticipantId || "(blank)"}`,
           `typeRows::${state.debugInfo.typeRows}`,
           `mappingRows::${state.debugInfo.mappingRows}`,
           `activeMappingRows::${state.debugInfo.activeMappingRows}`,
@@ -988,8 +990,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           showValidationError("Already submitted for this conversation", submitButton);
           return;
         }
-        if (!context.conversationId || !context.participantId || !context.communicationId) {
-          showValidationError("Missing conversationId, participantId or communicationId", submitButton);
+        if (!context.conversationId || !context.agentParticipantId || !context.agentCommunicationId) {
+          showValidationError("Missing conversationId, agentParticipantId or agentCommunicationId", submitButton);
           return;
         }
 
@@ -1080,8 +1082,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           "ASSIGN_WRAPUP_CODE_TO_INTERACTION",
           `version::${APP_VERSION || "(blank)"}`,
           `conversationId::${context.conversationId || "(blank)"}`,
-          `participantId::${context.participantId || "(blank)"}`,
-          `communicationId::${context.communicationId || "(blank)"}`,
+          `agentParticipantId::${context.agentParticipantId || "(blank)"}`,
+          `agentCommunicationId::${context.agentCommunicationId || "(blank)"}`,
           `inquiry::${contact.label || "(blank)"}`,
           `wrapupName::${outcome.label || "(blank)"}`,
           `combinedWrapupCodeName::${state.debugInfo.wrapupCodeName || "(blank)"}`,
@@ -1164,7 +1166,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       }
 
       async function setMessageConversationWrapup(token, wrapupCodeId, notes) {
-        const url = `${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.participantId)}/communications/${encodeURIComponent(context.communicationId)}/wrapup`;
+        const url = `${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.agentParticipantId)}/communications/${encodeURIComponent(context.agentCommunicationId)}/wrapup`;
         const response = await fetch(url, {
           method: "POST",
           headers: {
@@ -1189,7 +1191,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
 
       async function updateDebugAttributeSafe(token, attributeName, logText) {
         try {
-          if (!token || !attributeName || !context.conversationId || !context.participantId) return;
+          if (!token || !attributeName || !context.conversationId || !context.agentParticipantId) return;
           await setParticipantAttributes(token, {
             [attributeName]: truncateForAttribute(logText, DEBUG_ATTRIBUTE_MAX_LENGTH),
           });
@@ -1205,7 +1207,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       }
 
       async function setParticipantAttributes(token, attributes) {
-        const response = await fetch(`${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.participantId)}/attributes`, {
+        const response = await fetch(`${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.agentParticipantId)}/attributes`, {
           method: "PATCH",
           headers: {
             Authorization: "Bearer " + token,
