@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.42-v33-transfer-core-restored",
+  "version": "v1.7.2.30-participant-status",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -23,7 +23,6 @@
     "css/send-message.css"
   ],
   "notes": [
-    "v33 transfer-safe ChatMonitor notification core restored. Interaction bridge recovery is not used for greeting sends.",
     "SendMsg page removed because Agent Joined/Greeting send logic is now handled by Chat Monitor.",
     "index.html is the single OAuth/MFA callback and router page.",
     "Use index.html?page=chatmonitor for Client App. Use direct holdresume.html, holdtimer.html, and prospects.html URLs in Agent Script to avoid router flicker.",

@@ -119,10 +119,11 @@
         clientId:p("clientId", sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_CLIENT_ID),
         region:p("region", p("gcTargetEnv", sessionStorage.getItem(STORAGE_REGION) || "mypurecloud.ie")),
         conversationId:p("conversationId", ""),
-        agentCommunicationId:p("agentCommunicationId", ""),
-        agentParticipantId:p("agentParticipantId", ""),
+        communicationId:p("communicationId", p("agentCommunicationId", "")),
+        agentCommunicationId:p("agentCommunicationId", p("communicationId", "")),
+        participantId:p("participantId", p("agentParticipantId", "")),
+        agentParticipantId:p("agentParticipantId", p("participantId", "")),
         customerCommunicationId:p("customerCommunicationId", ""),
-        customerParticipantId:p("customerParticipantId", ""),
         holdMessageText:decodeMessageText(p("holdMessageText", "Gen-Hold-32")),
         resumeMessageText:decodeMessageText(p("resumeMessageText", "Gen-Resume-33")),
         maxHoldAttempts:Math.max(1, n("maxHoldAttempts", 3)),
@@ -150,7 +151,7 @@
       if (CONFIG.mode === "micro") document.body.classList.add("compact", "micro");
 
       function getCentralHoldKey(){
-        return sanitizeKey([CONFIG.conversationId || "NO_CONV", CONFIG.agentCommunicationId || "NO_AGENT_COMM", CONFIG.customerCommunicationId || "NO_CUSTOMER_COMM"].join("|"));
+        return sanitizeKey([CONFIG.conversationId || "NO_CONV", CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_AGENT_COMM", CONFIG.customerCommunicationId || "NO_CUSTOMER_COMM"].join("|"));
       }
       function readRecords(){
         try { const raw=localStorage.getItem(GCB_ACTIVE_HOLDS_KEY); const obj=raw?JSON.parse(raw):{}; return obj && typeof obj==="object" && !Array.isArray(obj) ? obj : {}; } catch(e){ return {}; }
@@ -167,13 +168,14 @@
         return Object.values(records).find(r => r && r.conversationId === CONFIG.conversationId && isActiveHoldRecord(r)) || null;
       }
       function saveHoldRecord(){
-        if (!CONFIG.conversationId || !CONFIG.agentCommunicationId) return null;
+        if (!CONFIG.conversationId || !(CONFIG.agentCommunicationId || CONFIG.communicationId)) return null;
         const records=readRecords();
         const key=getCentralHoldKey();
         const now=Date.now();
         const record={
-          key:key, conversationId:CONFIG.conversationId, agentCommunicationId:CONFIG.agentCommunicationId,
-          agentParticipantId:CONFIG.agentParticipantId, customerParticipantId:CONFIG.customerParticipantId,
+          key:key, conversationId:CONFIG.conversationId, communicationId:CONFIG.communicationId,
+          agentCommunicationId:CONFIG.agentCommunicationId || CONFIG.communicationId,
+          participantId:CONFIG.participantId, agentParticipantId:CONFIG.agentParticipantId || CONFIG.participantId,
           customerCommunicationId:CONFIG.customerCommunicationId,
           holdMessageText:CONFIG.holdMessageText, resumeMessageText:CONFIG.resumeMessageText,
           maxHoldTime:CONFIG.maxHoldTime, maxHoldAttempts:CONFIG.maxHoldAttempts, autoResumeEnabled:CONFIG.autoResumeEnabled,
@@ -254,7 +256,7 @@
         window.location.href = authUrl;
       }
       function buildActionKey(){
-        const raw=CONFIG.requestId || [CONFIG.conversationId || "NO_CONV", CONFIG.externalAction || "NONE", CONFIG.agentCommunicationId || "NO_COMM"].join("|");
+        const raw=CONFIG.requestId || [CONFIG.conversationId || "NO_CONV", CONFIG.externalAction || "NONE", CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_COMM"].join("|");
         return ACTION_STATE_PREFIX + sanitizeKey(raw);
       }
       function getActionState(){ try { const raw=localStorage.getItem(buildActionKey()); return raw ? JSON.parse(raw) : null; } catch(_) { return null; } }
@@ -265,8 +267,8 @@
         const token=getAccessToken();
         if (!token) throw new Error("OAuth token missing. Open/refresh GCB index page first.");
         if (!CONFIG.conversationId) throw new Error("conversationId is required.");
-        const communicationId=CONFIG.agentCommunicationId;
-        if (!communicationId) throw new Error("agentCommunicationId is required.");
+        const communicationId=CONFIG.communicationId || CONFIG.agentCommunicationId;
+        if (!communicationId) throw new Error("communicationId is required.");
         const messageText=action === "HOLD" ? CONFIG.holdMessageText : CONFIG.resumeMessageText;
         if (!messageText) throw new Error(action + " message text is required.");
         const endpoint=API_BASE + "/api/v2/conversations/messages/" + encodeURIComponent(CONFIG.conversationId) + "/communications/" + encodeURIComponent(communicationId) + "/messages";

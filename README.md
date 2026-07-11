@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.42-v33-transfer-core-restored
+Updated package: v1.7.2.30-participant-status
 
 ## Main changes
 
@@ -84,57 +84,3 @@ ChatMonitor banner default update - v1.7.2.33
 - Default banner layout is light.
 - Use bannerLayout=dark only when dark preview is required.
 - Header compact sizing: min-height 50px, logo 40x40px, logo padding 0.
-
-
-## v1.7.2.34 MFA refresh recovery update
-- Preserves PKCE verifier by OAuth state during MFA.
-- Reuses an already valid Genesys token when the callback URL is refreshed after MFA.
-- Removes stale OAuth code/state parameters before restoring the GCB or Prospects page.
-- Prevents false `Missing PKCE code verifier` failures after authentication completed in another Genesys frame.
-- Keeps all v1.7.2.33 light compact banner behavior unchanged.
-
-## v1.7.2.35 SendMessage label update
-
-- Changed the GCB index status-dashboard display label from **Chat Monitor** to **SendMessage**.
-- Internal ChatMonitor page, routing, notification listener, IDs, and business logic remain unchanged.
-- Retains the v1.7.2.34 MFA/PKCE refresh-recovery correction and compact light-banner behavior.
-
-
-## v1.7.2.37 Index title cleanup
-
-- Removed the duplicate **Genesys Context Bridge (GCB)** title from the index status card.
-- Retained the compact top banner title and all existing OAuth, SendMessage, Hold/Resume, Prospects, and status logic unchanged.
-
-
-## v1.7.2.37 - Canonical Runtime IDs
-- Removed legacy URL aliases `communicationId` and `participantId`.
-- Standardized on `agentCommunicationId` and `agentParticipantId`.
-- Added optional `customerParticipantId` alongside `customerCommunicationId`.
-- Updated Prospects, HoldResume, HoldTimer, and shared Genesys API context handling.
-
-
-## v1.7.2.38 - Interaction bridge recovery
-- Added a same-origin interaction-context bridge from the Agent Script GCB index page to ChatMonitor.
-- ChatMonitor now fetches and processes the current conversation snapshot when a notification event is missed.
-- Preserves the canonical runtime ID model introduced in v1.7.2.37.
-- Changed the visible label from **User Role** to **User Role**.
-- ChatMonitor UI version updated to v1.2.6.
-
-
-## v1.7.2.39 - Agent diagnostic download
-- Added **Copy Diagnostic Details** and **Download Diagnostic Logs** to Agent View so agents can share troubleshooting information with support.
-- Added **Download details** to the compact index status page as a reliable alternative when browser clipboard access is blocked.
-- Standardized the visible session label as **User Role**.
-- Agent diagnostic exports exclude OAuth tokens, authorization codes, PKCE verifiers, and client secrets.
-- ChatMonitor UI version updated to v1.2.7.
-
-
-## v1.7.2.41 - Session and record merge
-- Merges interaction-bridge records without a communication ID into the matching notification record.
-- Prevents a temporary missing communication ID from being counted as a failed greeting.
-- Uses one canonical customer session ID per conversation, preferring journeyContext.customerSession.id and AFT_GCB_SessionKey over legacy sessionID.
-- Current counters exclude historical disconnected/skipped records.
-- Agent diagnostic exports are concise and exclude raw participant attributes and customer personal/banking data.
-- ChatMonitor UI version updated to v1.2.10.
-
-- v1.7.2.42: v33 transfer-safe ChatMonitor core restored; diagnostics and User Role label retained.

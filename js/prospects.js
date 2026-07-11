@@ -19,10 +19,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED = "rakbank_prospects_load_recovery_attempted";
       const context = {
         conversationId: getParam("conversationId"),
-        agentCommunicationId: getParam("agentCommunicationId"),
-        agentParticipantId: getParam("agentParticipantId"),
-        customerCommunicationId: getParam("customerCommunicationId"),
-        customerParticipantId: getParam("customerParticipantId"),
+        communicationId: getParam("communicationId"),
+        participantId: getParam("participantId"),
       };
 
       const OAUTH_CLIENT_ID = getParam("clientId") || sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_OAUTH_CLIENT_ID;
@@ -32,8 +30,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const SEARCH_DEBUG_ATTRIBUTE_NAME = "AFT_DFN_LOG_SEARCH_PROSPECT_DROPDOWN";
       const ASSIGN_DEBUG_ATTRIBUTE_NAME = "AFT_DFN_LOG_ASSIGN_WRAPUP_CODE_TO_INTERACTION";
       const DEBUG_ATTRIBUTE_MAX_LENGTH = 20000;
-      const draftKey = `RAK_PROSPECTS_DRAFT_${context.conversationId}_${context.agentCommunicationId}`;
-      const submitKey = `RAK_PROSPECTS_SUBMITTED_${context.conversationId}_${context.agentCommunicationId}`;
+      const draftKey = `RAK_PROSPECTS_DRAFT_${context.conversationId}_${context.communicationId}`;
+      const submitKey = `RAK_PROSPECTS_SUBMITTED_${context.conversationId}_${context.communicationId}`;
 
       const actionConfig = {
         all: getParam("prospectsDataActionId"),
@@ -152,7 +150,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         participants.forEach((p) => { if (p && p.attributes) Object.assign(output, p.attributes); });
         participants.forEach((p) => {
           const pid = String((p && p.id) || "").trim();
-          if (pid && pid === context.agentParticipantId && p.attributes) Object.assign(output, p.attributes);
+          if (pid && pid === context.participantId && p.attributes) Object.assign(output, p.attributes);
         });
         return output;
       }
@@ -196,8 +194,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         if (code) {
           try {
             setRuntimeStatus("Completing Genesys login...");
-            const existingToken = getAccessToken();
-            if (!existingToken) await handleOAuthCallback(code, params.get("state"));
+            await handleOAuthCallback(code);
             sessionStorage.removeItem(STORAGE_PROSPECTS_AUTO_REFRESH_BLOCKED);
             const originalQuery = sessionStorage.getItem(STORAGE_PROSPECTS_ORIGINAL_QUERY) || "";
             sessionStorage.removeItem(STORAGE_PROSPECTS_ORIGINAL_QUERY);
@@ -277,8 +274,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           `interactionOutcomeMultiSelect: ${String(INTERACTION_OUTCOME_MULTI_SELECT)}`,
           `loadRecoveryAttempted: ${sessionStorage.getItem(STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED) || "false"}`,
           `conversationId: ${context.conversationId || "[missing]"}`,
-          `agentCommunicationId: ${context.agentCommunicationId || "[missing]"}`,
-          `agentParticipantId: ${context.agentParticipantId || "[missing]"}`,
+          `communicationId: ${context.communicationId || "[missing]"}`,
+          `participantId: ${context.participantId || "[missing]"}`,
           `region: ${GENESYS_REGION || "[missing]"}`,
           `clientId: ${OAUTH_CLIENT_ID || "[missing]"}`,
           `typeDataTableId: ${dataTableConfig.types || "[missing]"}`,
@@ -432,8 +429,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       function buildActionInput(extra = {}) {
         return {
           conversationId: context.conversationId,
-          agentCommunicationId: context.agentCommunicationId,
-          agentParticipantId: context.agentParticipantId,
+          communicationId: context.communicationId,
+          participantId: context.participantId,
           typeOfInteraction: typeSelect.value,
           ...extra,
         };
@@ -846,7 +843,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       }
 
       function saveDraft() {
-        if (!context.conversationId || !context.agentCommunicationId) return;
+        if (!context.conversationId || !context.communicationId) return;
         const contacts = getSelectedOptions("contactReason");
         const outcomes = getSelectedOptions("outcome");
         const draft = {
@@ -921,7 +918,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           "SEARCH_PROSPECT_DROPDOWN",
           `version::${APP_VERSION || "(blank)"}`,
           `conversationId::${context.conversationId || "(blank)"}`,
-          `agentParticipantId::${context.agentParticipantId || "(blank)"}`,
+          `participantId::${context.participantId || "(blank)"}`,
           `typeRows::${state.debugInfo.typeRows}`,
           `mappingRows::${state.debugInfo.mappingRows}`,
           `activeMappingRows::${state.debugInfo.activeMappingRows}`,
@@ -990,8 +987,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           showValidationError("Already submitted for this conversation", submitButton);
           return;
         }
-        if (!context.conversationId || !context.agentParticipantId || !context.agentCommunicationId) {
-          showValidationError("Missing conversationId, agentParticipantId or agentCommunicationId", submitButton);
+        if (!context.conversationId || !context.participantId || !context.communicationId) {
+          showValidationError("Missing conversationId, participantId or communicationId", submitButton);
           return;
         }
 
@@ -1082,8 +1079,8 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           "ASSIGN_WRAPUP_CODE_TO_INTERACTION",
           `version::${APP_VERSION || "(blank)"}`,
           `conversationId::${context.conversationId || "(blank)"}`,
-          `agentParticipantId::${context.agentParticipantId || "(blank)"}`,
-          `agentCommunicationId::${context.agentCommunicationId || "(blank)"}`,
+          `participantId::${context.participantId || "(blank)"}`,
+          `communicationId::${context.communicationId || "(blank)"}`,
           `inquiry::${contact.label || "(blank)"}`,
           `wrapupName::${outcome.label || "(blank)"}`,
           `combinedWrapupCodeName::${state.debugInfo.wrapupCodeName || "(blank)"}`,
@@ -1166,7 +1163,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       }
 
       async function setMessageConversationWrapup(token, wrapupCodeId, notes) {
-        const url = `${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.agentParticipantId)}/communications/${encodeURIComponent(context.agentCommunicationId)}/wrapup`;
+        const url = `${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.participantId)}/communications/${encodeURIComponent(context.communicationId)}/wrapup`;
         const response = await fetch(url, {
           method: "POST",
           headers: {
@@ -1191,7 +1188,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
 
       async function updateDebugAttributeSafe(token, attributeName, logText) {
         try {
-          if (!token || !attributeName || !context.conversationId || !context.agentParticipantId) return;
+          if (!token || !attributeName || !context.conversationId || !context.participantId) return;
           await setParticipantAttributes(token, {
             [attributeName]: truncateForAttribute(logText, DEBUG_ATTRIBUTE_MAX_LENGTH),
           });
@@ -1207,7 +1204,7 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       }
 
       async function setParticipantAttributes(token, attributes) {
-        const response = await fetch(`${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.agentParticipantId)}/attributes`, {
+        const response = await fetch(`${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.participantId)}/attributes`, {
           method: "PATCH",
           headers: {
             Authorization: "Bearer " + token,
@@ -1242,17 +1239,13 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
         sessionStorage.removeItem("gc_access_token");
         sessionStorage.removeItem("gc_token_expires_at");
         sessionStorage.removeItem("pkce_code_verifier");
-        sessionStorage.removeItem("pkce_oauth_state");
         await startPKCELogin();
       }
 
       async function startPKCELogin() {
         const codeVerifier = generateCodeVerifier();
         const codeChallenge = await generateCodeChallenge(codeVerifier);
-        const oauthState = generateCodeVerifier().slice(0, 48);
         sessionStorage.setItem("pkce_code_verifier", codeVerifier);
-        sessionStorage.setItem("pkce_oauth_state", oauthState);
-        sessionStorage.setItem("pkce_code_verifier:" + oauthState, codeVerifier);
         sessionStorage.setItem(STORAGE_CLIENT_ID, OAUTH_CLIENT_ID);
         sessionStorage.setItem(STORAGE_REGION, GENESYS_REGION);
         sessionStorage.setItem(STORAGE_PROSPECTS_ORIGINAL_QUERY, buildQueryWithoutOAuthCode());
@@ -1261,21 +1254,12 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           `&client_id=${encodeURIComponent(OAUTH_CLIENT_ID)}` +
           `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
           `&code_challenge=${encodeURIComponent(codeChallenge)}` +
-          `&code_challenge_method=S256` +
-          `&state=${encodeURIComponent(oauthState)}`;
+          `&code_challenge_method=S256`;
       }
 
-      async function handleOAuthCallback(code, callbackState) {
-        const stateValue = String(callbackState || "").trim();
-        const codeVerifier = (stateValue && sessionStorage.getItem("pkce_code_verifier:" + stateValue)) || sessionStorage.getItem("pkce_code_verifier");
-        const existingToken = getAccessToken();
-        if (!codeVerifier && existingToken) return existingToken;
-        if (!codeVerifier) throw new Error("Missing PKCE code verifier. Authentication may already be complete; reload the Prospects page.");
-        const expectedState = sessionStorage.getItem("pkce_oauth_state");
-        if (stateValue && expectedState && stateValue !== expectedState && !sessionStorage.getItem("pkce_code_verifier:" + stateValue)) {
-          if (existingToken) return existingToken;
-          throw new Error("OAuth state validation failed. Please start authentication again.");
-        }
+      async function handleOAuthCallback(code) {
+        const codeVerifier = sessionStorage.getItem("pkce_code_verifier");
+        if (!codeVerifier) throw new Error("Missing PKCE code verifier.");
         const body = new URLSearchParams();
         body.append("grant_type", "authorization_code");
         body.append("client_id", OAUTH_CLIENT_ID);
@@ -1288,17 +1272,9 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
           body,
         });
         const result = parseJson(await response.text());
-        if (!response.ok) {
-          const recoveredToken = getAccessToken();
-          if (recoveredToken) return recoveredToken;
-          throw new Error("Token request failed: " + JSON.stringify(result));
-        }
+        if (!response.ok) throw new Error("Token request failed: " + JSON.stringify(result));
         sessionStorage.setItem("gc_access_token", result.access_token);
         sessionStorage.setItem("gc_token_expires_at", String(Date.now() + ((result.expires_in || 3600) * 1000)));
-        sessionStorage.removeItem("pkce_code_verifier");
-        sessionStorage.removeItem("pkce_oauth_state");
-        if (stateValue) sessionStorage.removeItem("pkce_code_verifier:" + stateValue);
-        return result.access_token || "";
       }
 
       function getAccessToken() {
@@ -1335,9 +1311,6 @@ const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       function buildQueryWithoutOAuthCode() {
         const next = new URLSearchParams(window.location.search);
         next.delete("code");
-        next.delete("state");
-        next.delete("error");
-        next.delete("error_description");
         return next.toString() ? "?" + next.toString() : "";
       }
 

@@ -94,7 +94,7 @@
     }
 
     let agentCommunicationId = C.safeString(options.agentCommunicationId);
-    let agentParticipantId = C.safeString(options.agentParticipantId);
+    let agentParticipantId = C.safeString(options.agentParticipantId || options.participantId);
 
     if (agentCommunicationId) {
       const agentParticipant = findParticipantByCommunicationId(conversation, agentCommunicationId);
@@ -107,16 +107,9 @@
       agentCommunicationId = extractCommunicationIdFromParticipant(agentParticipant);
     }
 
-    let customerParticipantId = C.safeString(options.customerParticipantId);
-    if (!customerParticipantId && customerCommunicationId) {
-      const customerParticipant = findParticipantByCommunicationId(conversation, customerCommunicationId);
-      if (customerParticipant) customerParticipantId = C.safeString(customerParticipant.id);
-    }
-
     return {
       conversation,
       customerCommunicationId,
-      customerParticipantId,
       agentCommunicationId,
       agentParticipantId
     };

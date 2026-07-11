@@ -99,8 +99,9 @@
       lines.push("Debug Parameters");
       lines.push("");
       lines.push("conversationId: " + (CONFIG.conversationId || "[missing]"));
+      lines.push("communicationId: " + (CONFIG.communicationId || "[missing]"));
+      lines.push("participantId: " + (CONFIG.participantId || "[missing]"));
       lines.push("agentParticipantId: " + (CONFIG.agentParticipantId || "[missing]"));
-      lines.push("customerParticipantId: " + (CONFIG.customerParticipantId || "[missing]"));
       lines.push("customerCommunicationId: " + (CONFIG.customerCommunicationId || "[missing]"));
       lines.push("agentCommunicationId: " + (CONFIG.agentCommunicationId || "[missing]"));
       lines.push("region: " + (CONFIG.region || "[missing]"));
@@ -426,9 +427,10 @@
       clientId: getParam("clientId", sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_CLIENT_ID),
       region: getParam("region", getParam("gcTargetEnv", sessionStorage.getItem(STORAGE_REGION) || DEFAULT_REGION)),
       conversationId: getParam("conversationId", "") || deriveConversationIdFromRequestId(getParam("requestId", "")),
-      agentParticipantId: getParam("agentParticipantId", ""),
-      customerParticipantId: getParam("customerParticipantId", ""),
-      customerCommunicationId: getParam("customerCommunicationId", ""),
+      communicationId: getParam("communicationId", getParam("customerCommunicationId", "")),
+      participantId: getParam("participantId", getParam("agentParticipantId", "")),
+      agentParticipantId: getParam("agentParticipantId", getParam("participantId", "")),
+      customerCommunicationId: getParam("customerCommunicationId", getParam("communicationId", "")),
       agentCommunicationId: getParam("agentCommunicationId", ""),
       currentAgentInteractionStartTime: getParam("currentAgentInteractionStartTime", getParam("agentInteractionStartTime", "")),
       isCustomerBasedHoldCalculation: getBoolParam("isCustomerBasedHoldCalculation", false),
@@ -491,7 +493,7 @@
       participants.forEach(function (p) { if (p && p.attributes) Object.assign(output, p.attributes); });
       participants.forEach(function (p) {
         const pid = safeString(p && p.id);
-        if (pid && (pid === CONFIG.agentParticipantId || pid === CONFIG.customerParticipantId) && p.attributes) Object.assign(output, p.attributes);
+        if (pid && (pid === CONFIG.participantId || pid === CONFIG.agentParticipantId) && p.attributes) Object.assign(output, p.attributes);
       });
       return output;
     }
@@ -547,7 +549,7 @@
     }
 
     function getContextKey() {
-      return sanitizeKey((CONFIG.conversationId || "NO_CONV") + "_" + (CONFIG.customerCommunicationId || CONFIG.agentCommunicationId || "NO_COMM"));
+      return sanitizeKey((CONFIG.conversationId || "NO_CONV") + "_" + (CONFIG.communicationId || CONFIG.customerCommunicationId || "NO_COMM"));
     }
 
     function getButtonStateKey() {
@@ -854,7 +856,7 @@
      * Genesys message send
      ************************************************************/
     async function resolveCommunicationId(token) {
-      if (CONFIG.agentCommunicationId) return CONFIG.agentCommunicationId;
+      if (CONFIG.communicationId) return CONFIG.communicationId;
       const endpoint = API_BASE + "/api/v2/conversations/messages/" + encodeURIComponent(CONFIG.conversationId);
       const response = await fetch(endpoint, {
         method: "GET",
@@ -863,15 +865,15 @@
       const text = await response.text();
       if (!response.ok) throw new Error("Communication lookup failed. HTTP " + response.status + " - " + text);
       const conversation = text ? JSON.parse(text) : {};
-      const communicationId = extractBestCommunicationId(conversation, "agent");
+      const communicationId = extractBestCommunicationId(conversation);
       if (!communicationId) throw new Error("communicationId could not be resolved from conversation.");
-      CONFIG.agentCommunicationId = communicationId;
+      CONFIG.communicationId = communicationId;
       return communicationId;
     }
 
-    function extractBestCommunicationId(conversation, preferredPurpose) {
+    function extractBestCommunicationId(conversation) {
       if (!conversation || !Array.isArray(conversation.participants)) return "";
-      const preferredPurposes = preferredPurpose ? [preferredPurpose] : ["agent", "customer", "external"];
+      const preferredPurposes = ["customer", "external", "agent"];
       for (const purpose of preferredPurposes) {
         for (const participant of conversation.participants) {
           if (safeString(participant.purpose).toLowerCase() !== purpose) continue;
@@ -899,7 +901,7 @@
     }
 
     function buildRequestId(action) {
-      return sanitizeKey((CONFIG.conversationId || "NO_CONV") + "-" + action + "-" + (CONFIG.agentCommunicationId || "NO_COMM") + "-" + Date.now());
+      return sanitizeKey((CONFIG.conversationId || "NO_CONV") + "-" + action + "-" + (CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_COMM") + "-" + Date.now());
     }
 
     async function sendMessageToConversation(action, messageText) {
@@ -980,10 +982,11 @@
     function buildHoldDetailsRequestBody() {
       return {
         conversationId: CONFIG.conversationId,
+        participantId: CONFIG.participantId,
         agentParticipantId: CONFIG.agentParticipantId,
-        customerParticipantId: CONFIG.customerParticipantId,
-        customerCommunicationId: CONFIG.customerCommunicationId,
+        customerCommunicationId: CONFIG.customerCommunicationId || CONFIG.communicationId,
         agentCommunicationId: CONFIG.agentCommunicationId,
+        communicationId: CONFIG.communicationId,
         currentAgentInteractionStartTime: CONFIG.currentAgentInteractionStartTime,
         isCustomerBasedHoldCalculation: CONFIG.isCustomerBasedHoldCalculation,
         setDebugAttribute: CONFIG.debug,
@@ -1076,8 +1079,8 @@
         ? messageConversation.participants
         : [];
       const refs = [];
-      const targetAgentParticipantId = safeString(CONFIG.agentParticipantId);
-      const targetCustomerCommunicationId = safeString(CONFIG.customerCommunicationId);
+      const targetAgentParticipantId = safeString(CONFIG.agentParticipantId || CONFIG.participantId);
+      const targetCustomerCommunicationId = safeString(CONFIG.customerCommunicationId || CONFIG.communicationId);
 
       participants.forEach(function (participant) {
         if (!participant || safeString(participant.purpose).toLowerCase() !== "agent") return;

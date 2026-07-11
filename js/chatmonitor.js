@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.10';
+const APP_VERSION = 'v1.2.5';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -134,81 +134,13 @@ function buildLogText(){
     `Exported: ${new Date().toISOString()}`,
     `Agent: ${currentUser?.name || '-'} (${currentUser?.id || '-'})`,
     `Nickname: ${$('agentNickname')?.textContent || '-'}`,
-    `User Role: ${$('agentRole')?.textContent || '-'}`,
+    `Agent Role: ${$('agentRole')?.textContent || '-'}`,
     `Monitor Status: ${$('monitorStatus')?.textContent || '-'}`,
     `Channel: ${$('channelId')?.textContent || '-'}`,
     ''
   ].join('\n');
   return summary + '=== Admin Events ===\n' + adminText + '\n\n=== Raw Notification Logs ===\n' + visibleLogs;
 }
-
-function setAgentDiagnosticStatus(message, level){
-  const el = $('agentDiagnosticStatus');
-  if(!el) return;
-  el.textContent = message || '';
-  el.className = 'small diagnosticStatus ' + (level || '');
-}
-function buildAgentDiagnosticText(){
-  const agentTableText = $('agentTable') ? $('agentTable').innerText : 'No conversation records.';
-  const participantSummary = $('supportConfigSummary') ? $('supportConfigSummary').textContent : 'Not available';
-  const recentLogs = Array.from(conversations.values()).sort((a,b)=>(b.firstTime||'').localeCompare(a.firstTime||'')).slice(0,25).map(r=>[
-    `[${r.lastTime}] ${r.greetingStatus || 'Pending'}`,
-    `conversationId=${r.conversationId || '-'}`,
-    `customerSessionId=${r.customerSessionId ? shortId(r.customerSessionId) : '-'}`,
-    `agentParticipantId=${r.participantId || '-'}`,
-    `agentCommunicationId=${r.communicationId || '-'}`,
-    `state=${r.state || '-'}`,
-    `event=${r.isTransferJoin ? 'Transfer Join' : 'Initial Join'}`,
-    `messageType=${r.messageType || '-'}`,
-    `reason=${r.lastAction || r.note || '-'}`
-  ].join(' | ')).join('\n\n');
-  const summary = [
-    'AFT GCB Agent Diagnostic Report ' + APP_VERSION,
-    `Exported: ${new Date().toISOString()}`,
-    `Logged-in User: ${currentUser?.name || '-'} (${currentUser?.id || '-'})`,
-    `Nickname: ${$('agentNickname')?.textContent || '-'}`,
-    `User Role: ${$('agentRole')?.textContent || '-'}`,
-    `Monitor Status: ${$('monitorStatus')?.textContent || '-'}`,
-    `Notification Channel: ${$('channelId')?.textContent || '-'}`,
-    `Source: ${$('sourceInfo')?.textContent || '-'}`,
-    `Target Environment: ${$('targetEnvInfo')?.textContent || '-'}`,
-    `Region: ${$('regionInfo')?.textContent || '-'}`,
-    `Active Connected Chats: ${$('mActive')?.textContent || '0'}`,
-    `Greetings Sent: ${$('mSent')?.textContent || '0'}`,
-    `Pending / Not Sent: ${$('mPending')?.textContent || '0'}`,
-    `Failed / Skipped: ${$('mFailed')?.textContent || '0'}`,
-    `Participant Config Summary: ${participantSummary || '-'}`,
-    '',
-    'Security Note: OAuth data and customer personal/banking attributes are excluded. Conversation and technical IDs are retained for support troubleshooting.',
-    ''
-  ].join('\n');
-  return summary + '=== Conversation Greeting Status ===\n' + agentTableText + '\n\n=== Recent Monitoring Logs ===\n' + (recentLogs || 'No logs available.');
-}
-async function copyAgentDiagnostics(){
-  const text = buildAgentDiagnosticText();
-  try{
-    await navigator.clipboard.writeText(text);
-    setAgentDiagnosticStatus('Diagnostic details copied.', 'ok');
-    log('OK','Agent diagnostic details copied to clipboard.');
-  }catch(e){
-    setAgentDiagnosticStatus('Clipboard is unavailable. Use Download Diagnostic Logs.', 'warn');
-    log('WARN','Agent diagnostic clipboard copy failed. Download remains available. '+(e?.message || e));
-  }
-}
-function downloadAgentDiagnostics(){
-  const text = buildAgentDiagnosticText();
-  const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
-  const a = document.createElement('a');
-  const ts = new Date().toISOString().replace(/[:.]/g,'-');
-  a.href = URL.createObjectURL(blob);
-  a.download = `AFT_GCB_Agent_Diagnostics_${ts}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
-  setAgentDiagnosticStatus('Diagnostic log downloaded.', 'ok');
-  log('OK','Agent diagnostic log downloaded.');
-}
-
 async function copyLogs(){
   const text = buildLogText();
   try{ await navigator.clipboard.writeText(text); log('OK','Admin logs copied to clipboard.'); }
