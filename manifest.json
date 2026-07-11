@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.47-safe-ui-diagnostics",
+  "version": "v1.7.2.49-support-agent-participant",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -28,7 +28,8 @@
     "Use index.html?page=chatmonitor for Client App. Use direct holdresume.html, holdtimer.html, and prospects.html URLs in Agent Script to avoid router flicker.",
     "chatmonitor.html is split into css/chatmonitor.css and js/chatmonitor.js.",
     "Direct business pages silently start OAuth/MFA only when token is missing, then index.html restores the original page URL after login.",
-    "v1.7.2.47 reapplies safe UI, diagnostic download, and OAuth/MFA refresh recovery enhancements on top of the confirmed v1.7.2.45 transfer-working baseline without changing ChatMonitor send/transfer logic."
+    "v1.7.2.47 reapplies safe UI, diagnostic download, and OAuth/MFA refresh recovery enhancements on top of the confirmed v1.7.2.45 transfer-working baseline without changing ChatMonitor send/transfer logic.",
+    "v1.7.2.49 replaces the long Role list in Support View with the Agent Participant ID and current communication state, improving transfer troubleshooting without changing ChatMonitor send or transfer logic."
   ],
   "fileMetadata": {
     "author": "Sivakumar Chandrahasu",

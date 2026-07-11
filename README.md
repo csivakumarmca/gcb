@@ -106,3 +106,18 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Adds copy/download diagnostics with concise, masked Agent View output.
 - Adds index download fallback.
 - Adds OAuth/MFA refresh-safe PKCE callback handling.
+
+
+## v1.7.2.48 Index Support Health
+- Removed the misleading SendMessage status row from index.html.
+- Added Runtime Parameters availability, Last API, and Last Error rows.
+- Added Environment, Source, page-load time, User Role, and shortened User ID metadata.
+- Copy/Download details now produce a support-focused index diagnostic report without OAuth secrets or customer personal/banking data.
+- ChatMonitor Agent 1 / Agent 2 joined and greeting send/transfer logic is unchanged from the confirmed v1.7.2.47 baseline.
+
+
+## v1.7.2.49 Support Agent Participant
+- Replaced the Support View Role column with Agent Participant.
+- Shows shortened agent participant ID and current state for easier transfer troubleshooting.
+- Full participant ID is available as hover text.
+- No changes to Agent 1 / Agent 2 joined, greeting, transfer, duplicate-control, OAuth, Hold/Resume, or Prospects logic.

@@ -74,9 +74,11 @@
 
     <table class="status-table" aria-label="GCB status summary">
       <tr><td>OAuth</td><td id="lineOauth"><span class="status-pending">Pending</span></td></tr>
-      <tr><td>SendMessage</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Hold / Resume</td><td id="lineHoldResume"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Prospects</td><td id="lineProspects"><span class="status-pending">Not run</span></td></tr>
+      <tr><td>Runtime Parameters</td><td id="lineRuntimeParams"><span class="status-pending">Checking</span></td></tr>
+      <tr><td>Last API</td><td id="lineLastApi"><span class="status-pending">None</span></td></tr>
+      <tr><td>Last Error</td><td id="lineLastError"><span class="status-ok">None</span></td></tr>
     </table>
 
     <div id="gcbMeta" class="meta"></div>
@@ -99,7 +101,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.47-safe-ui-diagnostics";
+      const ROUTER_VERSION = "v1.7.2.49-support-agent-participant";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -355,13 +357,114 @@
         el.innerHTML = '<span class="' + cls + '">' + C.escapeHtml(statusText(status, defaultText)) + '</span>';
       }
 
+
+      function getRuntimeParameters() {
+        const params = new URLSearchParams(window.location.search || "");
+        return {
+          conversationId: C.safeString(params.get("conversationId") || params.get("gcConversationId")),
+          agentParticipantId: C.safeString(params.get("agentParticipantId")),
+          agentCommunicationId: C.safeString(params.get("agentCommunicationId")),
+          customerParticipantId: C.safeString(params.get("customerParticipantId")),
+          customerCommunicationId: C.safeString(params.get("customerCommunicationId"))
+        };
+      }
+
+      function getRecentHealth() {
+        const events = window.GcbDebug ? window.GcbDebug.getEvents() : [];
+        let lastApi = null;
+        let lastError = null;
+        for (let i = events.length - 1; i >= 0; i -= 1) {
+          const event = events[i] || {};
+          if (!lastApi && ["FETCH_DONE", "FETCH_FAILED"].includes(C.safeString(event.step).toUpperCase())) lastApi = event;
+          if (!lastError && (C.safeString(event.level).toUpperCase() === "ERROR" || /FAILED|ERROR/.test(C.safeString(event.step).toUpperCase()))) lastError = event;
+          if (lastApi && lastError) break;
+        }
+        return { lastApi, lastError };
+      }
+
+      function setPlainStatusLine(id, text, cssClass) {
+        const el = $(id);
+        if (!el) return;
+        el.innerHTML = '<span class="' + (cssClass || "status-pending") + '">' + C.escapeHtml(text || "") + '</span>';
+      }
+
+      function renderRuntimeHealth() {
+        const runtime = getRuntimeParameters();
+        const entries = Object.entries(runtime);
+        const available = entries.filter(function (entry) { return !!entry[1]; });
+        const missing = entries.filter(function (entry) { return !entry[1]; }).map(function (entry) { return entry[0]; });
+        const runtimeText = available.length + "/" + entries.length + " available" + (missing.length ? " - Missing: " + missing.join(", ") : "");
+        setPlainStatusLine("lineRuntimeParams", runtimeText, missing.length ? "status-pending" : "status-ok");
+
+        const health = getRecentHealth();
+        if (health.lastApi) {
+          const apiText = [health.lastApi.time, health.lastApi.message].filter(Boolean).join(" - ");
+          const failed = C.safeString(health.lastApi.step).toUpperCase() === "FETCH_FAILED" || C.safeString(health.lastApi.level).toUpperCase() === "ERROR";
+          setPlainStatusLine("lineLastApi", apiText, failed ? "status-fail" : "status-ok");
+        } else {
+          setPlainStatusLine("lineLastApi", "None", "status-pending");
+        }
+
+        if (health.lastError) {
+          setPlainStatusLine("lineLastError", [health.lastError.time, health.lastError.message].filter(Boolean).join(" - "), "status-fail");
+        } else {
+          setPlainStatusLine("lineLastError", "None", "status-ok");
+        }
+      }
+
+      function deriveUserRole(user) {
+        const roles = [];
+        try {
+          const authRoles = user && user.authorization && user.authorization.roles;
+          if (Array.isArray(authRoles)) authRoles.forEach(function (role) { roles.push(C.safeString(role && (role.name || role))); });
+          const userRoles = user && user.roles;
+          if (Array.isArray(userRoles)) userRoles.forEach(function (role) { roles.push(C.safeString(role && (role.name || role))); });
+        } catch (_) {}
+        const cleaned = Array.from(new Set(roles.filter(Boolean)));
+        if (cleaned.some(function (name) { return /supervisor/i.test(name); })) return "Supervisor role assigned";
+        if (cleaned.length) return cleaned.join(", ");
+        return "User";
+      }
+
+      function buildIndexDiagnosticReport() {
+        const runtime = getRuntimeParameters();
+        const statuses = window.GcbDebug ? window.GcbDebug.getStatuses() : {};
+        const events = window.GcbDebug ? window.GcbDebug.getEvents() : [];
+        const health = getRecentHealth();
+        const lines = [
+          "AFT GCB Index Support Diagnostic Report",
+          "GCB Version: " + ROUTER_VERSION,
+          "Exported: " + new Date().toISOString(),
+          "Page: " + (window.location.pathname.split("/").pop() || "index.html"),
+          "Source: " + C.safeString(new URLSearchParams(window.location.search || "").get("source") || "Not provided"),
+          "Region: " + Auth.getRegion(),
+          "Target Environment: " + C.safeString(new URLSearchParams(window.location.search || "").get("gcTargetEnv") || "Not provided"),
+          "OAuth Status: " + statusText(statuses.oauth, "Pending"),
+          "Token Available: " + (Auth.getAccessToken() ? "Yes" : "No"),
+          "Hold / Resume Status: " + statusText(statuses.holdResume, "Not run"),
+          "Prospects Status: " + statusText(statuses.prospects, "Not run"),
+          "Conversation ID: " + (runtime.conversationId || "Missing"),
+          "Agent Participant ID: " + (runtime.agentParticipantId || "Missing"),
+          "Agent Communication ID: " + (runtime.agentCommunicationId || "Missing"),
+          "Customer Participant ID: " + (runtime.customerParticipantId || "Missing"),
+          "Customer Communication ID: " + (runtime.customerCommunicationId || "Missing"),
+          "Last API: " + (health.lastApi ? [health.lastApi.time, health.lastApi.message].filter(Boolean).join(" - ") : "None"),
+          "Last Error: " + (health.lastError ? [health.lastError.time, health.lastError.message].filter(Boolean).join(" - ") : "None"),
+          "",
+          "Security Note: OAuth tokens, authorization codes, PKCE verifiers, client secrets, and customer personal/banking data are excluded.",
+          "=== Recent Index Logs ==="
+        ];
+        events.slice(-120).forEach(function (event) { lines.push(formatEvent(event)); });
+        return lines.join("\n");
+      }
+
       function renderStatusLines() {
         const statuses = window.GcbDebug ? window.GcbDebug.getStatuses() : {};
         const issues = validateCurrentUrl();
         setLine("lineOauth", statuses.oauth, "Pending");
-        setLine("lineSendGreeting", statuses.sendGreeting, "Not run");
         setLine("lineHoldResume", statuses.holdResume, "Not run");
         setLine("lineProspects", statuses.prospects, "Not run");
+        renderRuntimeHealth();
         if (issues.length) {
           setStatus("URL issue detected: " + issues.join(" | "), "error");
         }
@@ -375,11 +478,18 @@
         const rows = [
           ["Build", ROUTER_VERSION],
           ["Region", Auth.getRegion()],
+          ["Environment", params.get("gcTargetEnv") || "Not provided"],
           ["Client", mask(Auth.getClientId())],
-          ["Conv", mask(params.get("conversationId") || params.get("gcConversationId"))],
-          ["Page", params.get("page") || params.get("module") || "None"]
+          ["Conversation", mask(params.get("conversationId") || params.get("gcConversationId"))],
+          ["Page", params.get("page") || params.get("module") || "None"],
+          ["Source", params.get("source") || "Not provided"],
+          ["Loaded", new Date().toLocaleString()]
         ];
-        if (user) rows.push(["User", C.safeString(user.name || user.email || user.id) || "Validated"]);
+        if (user) {
+          rows.push(["User", C.safeString(user.name || user.email || user.id) || "Validated"]);
+          rows.push(["User Role", deriveUserRole(user)]);
+          rows.push(["User ID", mask(user.id)]);
+        }
         rows.forEach(function (r) {
           const k = document.createElement("b"); k.textContent = r[0];
           const v = document.createElement("div"); v.textContent = r[1] || "Not provided";
@@ -407,7 +517,7 @@
         const toggle = $("toggleLogsBtn");
         const logBox = $("centralDebugLog");
         function downloadCentralDetails() {
-          const text = window.GcbDebug ? window.GcbDebug.exportText() : "No logs available.";
+          const text = buildIndexDiagnosticReport();
           const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
           const a = document.createElement("a");
           const ts = new Date().toISOString().replace(/[:.]/g, "-");
@@ -422,7 +532,7 @@
         if (clear) clear.onclick = function () { if (window.GcbDebug) window.GcbDebug.clear(); renderCentralLogs(); };
         if (download) download.onclick = downloadCentralDetails;
         if (copy) copy.onclick = async function () {
-          const text = window.GcbDebug ? window.GcbDebug.exportText() : "";
+          const text = buildIndexDiagnosticReport();
           try { await navigator.clipboard.writeText(text); setStatus("Debug details copied.", "success"); }
           catch (_) { setStatus("Clipboard is unavailable. Use Download details.", "warning"); }
         };
