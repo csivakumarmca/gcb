@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.38-interaction-bridge-recovery
+Updated package: v1.7.2.39-agent-diagnostic-download
 
 ## Main changes
 
@@ -119,3 +119,11 @@ ChatMonitor banner default update - v1.7.2.33
 - Preserves the canonical runtime ID model introduced in v1.7.2.37.
 - Changed the visible label from **Agent Role** to **User Role**.
 - ChatMonitor UI version updated to v1.2.6.
+
+
+## v1.7.2.39 - Agent diagnostic download
+- Added **Copy Diagnostic Details** and **Download Diagnostic Logs** to Agent View so agents can share troubleshooting information with support.
+- Added **Download details** to the compact index status page as a reliable alternative when browser clipboard access is blocked.
+- Standardized the visible session label as **User Role**.
+- Agent diagnostic exports exclude OAuth tokens, authorization codes, PKCE verifiers, and client secrets.
+- ChatMonitor UI version updated to v1.2.7.
