@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.40-session-record-merge
+Updated package: v1.7.2.41-bridge-communication-retry
 
 ## Main changes
 
@@ -129,10 +129,10 @@ ChatMonitor banner default update - v1.7.2.33
 - ChatMonitor UI version updated to v1.2.7.
 
 
-## v1.7.2.40 - Session and record merge
+## v1.7.2.41 - Session and record merge
 - Merges interaction-bridge records without a communication ID into the matching notification record.
 - Prevents a temporary missing communication ID from being counted as a failed greeting.
 - Uses one canonical customer session ID per conversation, preferring journeyContext.customerSession.id and AFT_GCB_SessionKey over legacy sessionID.
 - Current counters exclude historical disconnected/skipped records.
 - Agent diagnostic exports are concise and exclude raw participant attributes and customer personal/banking data.
-- ChatMonitor UI version updated to v1.2.8.
+- ChatMonitor UI version updated to v1.2.9.

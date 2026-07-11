@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.8';
+const APP_VERSION = 'v1.2.9';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -393,12 +393,35 @@ function readActiveInteractionContext(){
 async function recoverConversationFromInteractionContext(ctx, reason='startup'){
   if(!ctx || !ctx.conversationId || bridgeRecoveryInFlight.has(ctx.conversationId)) return;
   bridgeRecoveryInFlight.add(ctx.conversationId);
+  const retryDelays=[0,600,1000,1500,2200,3000];
   try{
     log('INFO',{interactionBridgeRecoveryStart:true,reason,conversationId:ctx.conversationId,agentCommunicationId:ctx.agentCommunicationId||''});
-    const snapshot=await getConversationSnapshot(ctx.conversationId);
-    if(!snapshot || !Array.isArray(snapshot.participants)) throw new Error('Conversation snapshot did not contain participants.');
-    handleNotification({eventBody:snapshot, topicName:'gcb.interaction.bridge'});
-    log('OK',{interactionBridgeRecoveryComplete:true,reason,conversationId:ctx.conversationId});
+    let communicationResolved=false;
+    for(let attempt=0; attempt<retryDelays.length; attempt++){
+      if(retryDelays[attempt]) await delay(retryDelays[attempt]);
+      const snapshot=await getConversationSnapshot(ctx.conversationId);
+      if(!snapshot || !Array.isArray(snapshot.participants)) throw new Error('Conversation snapshot did not contain participants.');
+      handleNotification({eventBody:snapshot, topicName:'gcb.interaction.bridge'});
+      const agent=findCurrentAgentParticipant(snapshot.participants);
+      const comm=agent ? getAgentCommunication(agent) : null;
+      communicationResolved=!!(comm && comm.id && !comm.endTime && !String(comm.state||'').toLowerCase().includes('disconnect'));
+      log(communicationResolved?'OK':'INFO',{
+        interactionBridgeRecoveryAttempt:true,
+        reason,
+        attempt:attempt+1,
+        conversationId:ctx.conversationId,
+        agentParticipantId:agent?.id||'',
+        agentCommunicationId:comm?.id||'',
+        communicationState:comm?.state||'',
+        communicationResolved
+      });
+      if(communicationResolved) break;
+    }
+    if(communicationResolved){
+      log('OK',{interactionBridgeRecoveryComplete:true,reason,conversationId:ctx.conversationId});
+    }else{
+      log('WARN',{interactionBridgeRecoveryPending:true,reason,conversationId:ctx.conversationId,message:'Agent communication ID was not available after bridge retries. Waiting for Genesys notification event.'});
+    }
   }catch(e){
     log('WARN',{interactionBridgeRecoveryFailed:true,reason,conversationId:ctx.conversationId,error:e.message});
   }finally{
@@ -678,6 +701,7 @@ function getCustomerSessionStartTime(customer, attrs={}){
 }
 function getCustomerSessionSource(customer, attrs={}){
   const messages=(customer.messages||customer.sessions||[]);
+  const msg=messages[0]||{};
   if(messages.some(m=>m?.journeyContext?.customerSession?.id)) return 'journeyContext.customerSession.id';
   if(attrs.AFT_GCB_SessionKey) return 'AFT_GCB_SessionKey';
   if(attrs.sessionID) return 'sessionID';
