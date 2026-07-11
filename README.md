@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.34-mfa-refresh-recovery
+Updated package: v1.7.2.35-sendmessage-label
 
 ## Main changes
 
@@ -92,3 +92,9 @@ ChatMonitor banner default update - v1.7.2.33
 - Removes stale OAuth code/state parameters before restoring the GCB or Prospects page.
 - Prevents false `Missing PKCE code verifier` failures after authentication completed in another Genesys frame.
 - Keeps all v1.7.2.33 light compact banner behavior unchanged.
+
+## v1.7.2.35 SendMessage label update
+
+- Changed the GCB index status-dashboard display label from **Chat Monitor** to **SendMessage**.
+- Internal ChatMonitor page, routing, notification listener, IDs, and business logic remain unchanged.
+- Retains the v1.7.2.34 MFA/PKCE refresh-recovery correction and compact light-banner behavior.

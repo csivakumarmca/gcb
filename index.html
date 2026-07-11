@@ -75,7 +75,7 @@
 
     <table class="status-table" aria-label="GCB status summary">
       <tr><td>OAuth</td><td id="lineOauth"><span class="status-pending">Pending</span></td></tr>
-      <tr><td>Chat Monitor</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
+      <tr><td>SendMessage</td><td id="lineSendGreeting"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Hold / Resume</td><td id="lineHoldResume"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Prospects</td><td id="lineProspects"><span class="status-pending">Not run</span></td></tr>
     </table>
@@ -99,7 +99,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.34-mfa-refresh-recovery";
+      const ROUTER_VERSION = "v1.7.2.35-sendmessage-label";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
