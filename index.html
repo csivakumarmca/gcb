@@ -60,6 +60,10 @@
       padding: 2px 6px;
     }
     html.gcb-router-mode .gcb-router-compact span { opacity: 0.75; }
+    .status-table td { vertical-align: top; }
+    .status-table td:first-child { width: 82px; min-width: 82px; }
+    .status-table td:last-child, #gcbMeta div { min-width: 0; overflow-wrap: anywhere; word-break: break-word; line-height: 1.25; }
+    #lineLastApi, #lineLastError { font-size: 11px; }
   </style>
 </head>
 <body>
@@ -76,7 +80,6 @@
       <tr><td>OAuth</td><td id="lineOauth"><span class="status-pending">Pending</span></td></tr>
       <tr><td>Hold / Resume</td><td id="lineHoldResume"><span class="status-pending">Not run</span></td></tr>
       <tr><td>Prospects</td><td id="lineProspects"><span class="status-pending">Not run</span></td></tr>
-      <tr><td>Runtime Parameters</td><td id="lineRuntimeParams"><span class="status-pending">Checking</span></td></tr>
       <tr><td>Last API</td><td id="lineLastApi"><span class="status-pending">None</span></td></tr>
       <tr><td>Last Error</td><td id="lineLastError"><span class="status-ok">None</span></td></tr>
     </table>
@@ -101,7 +104,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.49-support-agent-participant";
+      const ROUTER_VERSION = "v1.7.2.50-index-layout-cleanup";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -388,17 +391,29 @@
         el.innerHTML = '<span class="' + (cssClass || "status-pending") + '">' + C.escapeHtml(text || "") + '</span>';
       }
 
-      function renderRuntimeHealth() {
-        const runtime = getRuntimeParameters();
-        const entries = Object.entries(runtime);
-        const available = entries.filter(function (entry) { return !!entry[1]; });
-        const missing = entries.filter(function (entry) { return !entry[1]; }).map(function (entry) { return entry[0]; });
-        const runtimeText = available.length + "/" + entries.length + " available" + (missing.length ? " - Missing: " + missing.join(", ") : "");
-        setPlainStatusLine("lineRuntimeParams", runtimeText, missing.length ? "status-pending" : "status-ok");
+      function summarizeApiEvent(event) {
+        if (!event) return "None";
+        const raw = C.safeString(event.message);
+        const methodMatch = raw.match(/\b(GET|POST|PUT|PATCH|DELETE)\b/i);
+        const httpMatch = raw.match(/HTTP\s+(\d{3})/i);
+        const urlMatch = raw.match(/https?:\/\/[^\s]+/i);
+        let path = "API request";
+        if (urlMatch) {
+          try {
+            const parsed = new URL(urlMatch[0]);
+            path = parsed.pathname;
+          } catch (_) {
+            path = urlMatch[0];
+          }
+        }
+        if (path.length > 44) path = path.slice(0, 41) + "...";
+        return [methodMatch ? methodMatch[1].toUpperCase() : "API", path, httpMatch ? "HTTP " + httpMatch[1] : ""].filter(Boolean).join(" - ");
+      }
 
+      function renderRuntimeHealth() {
         const health = getRecentHealth();
         if (health.lastApi) {
-          const apiText = [health.lastApi.time, health.lastApi.message].filter(Boolean).join(" - ");
+          const apiText = summarizeApiEvent(health.lastApi);
           const failed = C.safeString(health.lastApi.step).toUpperCase() === "FETCH_FAILED" || C.safeString(health.lastApi.level).toUpperCase() === "ERROR";
           setPlainStatusLine("lineLastApi", apiText, failed ? "status-fail" : "status-ok");
         } else {
@@ -406,7 +421,9 @@
         }
 
         if (health.lastError) {
-          setPlainStatusLine("lineLastError", [health.lastError.time, health.lastError.message].filter(Boolean).join(" - "), "status-fail");
+          let errorText = C.safeString(health.lastError.message || "Error");
+          if (errorText.length > 72) errorText = errorText.slice(0, 69) + "...";
+          setPlainStatusLine("lineLastError", errorText, "status-fail");
         } else {
           setPlainStatusLine("lineLastError", "None", "status-ok");
         }

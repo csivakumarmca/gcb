@@ -121,3 +121,10 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Shows shortened agent participant ID and current state for easier transfer troubleshooting.
 - Full participant ID is available as hover text.
 - No changes to Agent 1 / Agent 2 joined, greeting, transfer, duplicate-control, OAuth, Hold/Resume, or Prospects logic.
+
+
+## v1.7.2.50 index layout cleanup
+- Removed the misleading Runtime Parameters row from index.html because page-specific runtime IDs are passed directly to Prospects and Hold/Resume pages.
+- Shortened Last API and Last Error values in the narrow status panel while retaining full values in copied/downloaded diagnostics.
+- Improved text wrapping to prevent overlap in narrow Genesys interaction-widget layouts.
+- ChatMonitor send, greeting, and transfer logic is unchanged.
