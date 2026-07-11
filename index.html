@@ -98,12 +98,13 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.37-canonical-runtime-ids";
+      const ROUTER_VERSION = "v1.7.2.38-interaction-bridge-recovery";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
+      const GCB_ACTIVE_INTERACTION_CONTEXT_KEY = "GCB_ACTIVE_INTERACTION_CONTEXT_V1";
       const INDEX_PARAMS = new URLSearchParams(window.location.search || "");
       const CURRENT_CONVERSATION_ID = C.safeString(INDEX_PARAMS.get("conversationId") || INDEX_PARAMS.get("gcConversationId") || "");
       let centralHoldMonitorStarted = false;
@@ -125,6 +126,26 @@
       };
 
       function $(id) { return document.getElementById(id); }
+
+      function publishActiveInteractionContext() {
+        if (!CURRENT_CONVERSATION_ID) return;
+        const context = {
+          conversationId: CURRENT_CONVERSATION_ID,
+          agentCommunicationId: C.safeString(INDEX_PARAMS.get("agentCommunicationId") || ""),
+          agentParticipantId: C.safeString(INDEX_PARAMS.get("agentParticipantId") || ""),
+          customerCommunicationId: C.safeString(INDEX_PARAMS.get("customerCommunicationId") || ""),
+          customerParticipantId: C.safeString(INDEX_PARAMS.get("customerParticipantId") || ""),
+          source: C.safeString(INDEX_PARAMS.get("source") || "AgentScript"),
+          updatedAt: new Date().toISOString()
+        };
+        try {
+          localStorage.setItem(GCB_ACTIVE_INTERACTION_CONTEXT_KEY, JSON.stringify(context));
+          window.dispatchEvent(new CustomEvent("gcb-active-interaction-context", { detail: context }));
+          debugLog("INFO", "ACTIVE_INTERACTION_CONTEXT_PUBLISHED", "conversationId=" + context.conversationId + " | agentCommunicationId=" + (context.agentCommunicationId || "[missing]"));
+        } catch (error) {
+          debugLog("WARN", "ACTIVE_INTERACTION_CONTEXT_PUBLISH_FAILED", error && error.message ? error.message : String(error));
+        }
+      }
 
       function isRouterMode() {
         return document.documentElement.classList.contains("gcb-router-mode");
@@ -468,6 +489,7 @@
         }
 
         renderMeta(user);
+        publishActiveInteractionContext();
         if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "pending", "Waiting for Hold/Resume action.");
         renderStatusLines();
         startCentralHoldMonitor();

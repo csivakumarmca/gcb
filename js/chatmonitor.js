@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.5';
+const APP_VERSION = 'v1.2.6';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -15,6 +15,9 @@ let userRoleCache = new Map();
 let roleNameById = new Map();
 const runtimeJoinedKeys = new Set();
 const activeSendLocks = new Set();
+const GCB_ACTIVE_INTERACTION_CONTEXT_KEY = 'GCB_ACTIVE_INTERACTION_CONTEXT_V1';
+const BRIDGE_CONTEXT_MAX_AGE_MS = 15 * 60 * 1000;
+const bridgeRecoveryInFlight = new Set();
 const MONITOR_INSTANCE_ID = 'gcb-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,10);
 const CROSS_TAB_LOCK_VERIFY_MS = 650;
 const rawLogBuffer = [];
@@ -134,7 +137,7 @@ function buildLogText(){
     `Exported: ${new Date().toISOString()}`,
     `Agent: ${currentUser?.name || '-'} (${currentUser?.id || '-'})`,
     `Nickname: ${$('agentNickname')?.textContent || '-'}`,
-    `Agent Role: ${$('agentRole')?.textContent || '-'}`,
+    `User Role: ${$('agentRole')?.textContent || '-'}`, 
     `Monitor Status: ${$('monitorStatus')?.textContent || '-'}`,
     `Channel: ${$('channelId')?.textContent || '-'}`,
     ''
@@ -308,8 +311,48 @@ function loadClientAppParams(){
   applyBannerLayout(bannerPref.value, bannerPref.source);
   updateDashboardStatus();
 }
+
+function readActiveInteractionContext(){
+  try{
+    const raw=localStorage.getItem(GCB_ACTIVE_INTERACTION_CONTEXT_KEY);
+    if(!raw) return null;
+    const ctx=JSON.parse(raw);
+    if(!ctx || !ctx.conversationId) return null;
+    const ts=Date.parse(ctx.updatedAt || '');
+    if(ts && Date.now()-ts > BRIDGE_CONTEXT_MAX_AGE_MS) return null;
+    return ctx;
+  }catch(e){ log('WARN','Unable to read active interaction context: '+e.message); return null; }
+}
+async function recoverConversationFromInteractionContext(ctx, reason='startup'){
+  if(!ctx || !ctx.conversationId || bridgeRecoveryInFlight.has(ctx.conversationId)) return;
+  bridgeRecoveryInFlight.add(ctx.conversationId);
+  try{
+    log('INFO',{interactionBridgeRecoveryStart:true,reason,conversationId:ctx.conversationId,agentCommunicationId:ctx.agentCommunicationId||''});
+    const snapshot=await getConversationSnapshot(ctx.conversationId);
+    if(!snapshot || !Array.isArray(snapshot.participants)) throw new Error('Conversation snapshot did not contain participants.');
+    handleNotification({eventBody:snapshot, topicName:'gcb.interaction.bridge'});
+    log('OK',{interactionBridgeRecoveryComplete:true,reason,conversationId:ctx.conversationId});
+  }catch(e){
+    log('WARN',{interactionBridgeRecoveryFailed:true,reason,conversationId:ctx.conversationId,error:e.message});
+  }finally{
+    bridgeRecoveryInFlight.delete(ctx.conversationId);
+  }
+}
+function setupInteractionContextBridge(){
+  const current=readActiveInteractionContext();
+  if(current) setTimeout(()=>recoverConversationFromInteractionContext(current,'startup'),250);
+  window.addEventListener('storage',event=>{
+    if(event.key!==GCB_ACTIVE_INTERACTION_CONTEXT_KEY || !event.newValue) return;
+    try{ recoverConversationFromInteractionContext(JSON.parse(event.newValue),'storage-event'); }catch(e){ log('WARN','Invalid interaction bridge event: '+e.message); }
+  });
+  window.addEventListener('gcb-active-interaction-context',event=>{
+    recoverConversationFromInteractionContext(event.detail,'custom-event');
+  });
+}
+
 async function init(){
   loadClientAppParams();
+  setupInteractionContextBridge();
   $('redirectUri').value = getIndexRedirectUri();
   await handleOAuthReturn();
   useTokenFromUrl(false);

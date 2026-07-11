@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.37-canonical-runtime-ids",
+  "version": "v1.7.2.38-interaction-bridge-recovery",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {

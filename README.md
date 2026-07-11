@@ -5,7 +5,7 @@
 -->
 # RAKBANK Genesys Context Bridge (GCB)
 
-Updated package: v1.7.2.37-canonical-runtime-ids
+Updated package: v1.7.2.38-interaction-bridge-recovery
 
 ## Main changes
 
@@ -111,3 +111,11 @@ ChatMonitor banner default update - v1.7.2.33
 - Standardized on `agentCommunicationId` and `agentParticipantId`.
 - Added optional `customerParticipantId` alongside `customerCommunicationId`.
 - Updated Prospects, HoldResume, HoldTimer, and shared Genesys API context handling.
+
+
+## v1.7.2.38 - Interaction bridge recovery
+- Added a same-origin interaction-context bridge from the Agent Script GCB index page to ChatMonitor.
+- ChatMonitor now fetches and processes the current conversation snapshot when a notification event is missed.
+- Preserves the canonical runtime ID model introduced in v1.7.2.37.
+- Changed the visible label from **Agent Role** to **User Role**.
+- ChatMonitor UI version updated to v1.2.6.
