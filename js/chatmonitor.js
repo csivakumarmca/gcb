@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.5';
+const APP_VERSION = 'v1.2.11';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -434,22 +434,72 @@ async function startMonitor(){
   }catch(e){ log('ERROR',e.message); }
 }
 async function stopMonitor(writeLog=true){ if(notifySocket){try{notifySocket.close()}catch(e){} notifySocket=null} $('monitorStatus').textContent='Stopped'; updateDashboardStatus(); if(writeLog)log('WARN','Monitor stopped.'); }
+const transferResolutionLocks=new Set();
 function handleNotification(msg){
   const body=msg.eventBody||msg.body||msg; if(!body||typeof body!=='object')return;
-  const conversationId=body.id||body.conversationId||body.conversation?.id; const participants=body.participants||body.conversation?.participants||[]; if(!conversationId||!Array.isArray(participants))return;
-  const agent=findCurrentAgentParticipant(participants); if(!agent)return;
+  processConversationBody(body,'notification');
+}
+function processConversationBody(body, source='notification'){
+  const conversationId=body.id||body.conversationId||body.conversation?.id;
+  const participants=body.participants||body.conversation?.participants||[];
+  if(!conversationId||!Array.isArray(participants))return;
+  const agent=findCurrentAgentParticipant(participants);
+  if(!agent){
+    if(source==='notification') resolveCurrentAgentLeg(conversationId,'agent-participant-missing');
+    return;
+  }
   const customer=participants.find(p=>String(p.purpose||'').toLowerCase()==='customer')||{};
   const comm=getAgentCommunication(agent);
   const info=getAgentState(agent, comm); if(!info.state)return;
+  // Transfer notifications can arrive before the new agent communication leg is attached.
+  // Do not send or create a failed record until the full conversation snapshot is re-read.
+  if(info.state==='JOINED / CONNECTED' && !comm.id){
+    log('INFO',{transferLegPending:true,conversationId,agentParticipantId:agent.id||'',agentUserId:agent.userId||agent.user?.id||'',source});
+    resolveCurrentAgentLeg(conversationId,'communication-id-missing');
+    return;
+  }
   const rec=upsertRecord(conversationId,agent,comm,info,body,customer,participants);
   addAdminEvent(info.state, rec, info.note);
   refreshTables();
   if(info.state==='JOINED / CONNECTED'){
-    log('INFO',`JOINED / CONNECTED detected. recordId=${rec.recordId}; conversationId=${rec.conversationId}; communicationId=${rec.communicationId||'-'}; autoSend=${$('autoSendGreeting').checked}`);
+    log('INFO',`JOINED / CONNECTED detected. recordId=${rec.recordId}; conversationId=${rec.conversationId}; communicationId=${rec.communicationId||'-'}; autoSend=${$('autoSendGreeting').checked}; source=${source}`);
     maybeAutoSendGreeting(rec).catch(e=>{ rec.greetingStatus='Failed'; rec.lastAction=e.message; addAdminEvent('AUTO GREETING ERROR',rec,e.message); log('ERROR',e.message); refreshTables(); });
   }
 }
-function findCurrentAgentParticipant(participants){ const me=currentUser?.id; return participants.find(p=>String(p.purpose||'').toLowerCase()==='agent' && (!me || (p.userId||p.user?.id)===me)) || participants.find(p=>String(p.purpose||'').toLowerCase()==='agent'); }
+function findCurrentAgentParticipant(participants){
+  const me=currentUser?.id;
+  const agents=participants.filter(p=>String(p.purpose||'').toLowerCase()==='agent');
+  if(me){
+    const mine=agents.filter(p=>(p.userId||p.user?.id)===me);
+    return mine.sort((a,b)=>new Date(b.connectedTime||b.startTime||0)-new Date(a.connectedTime||a.startTime||0))[0]||null;
+  }
+  return agents.sort((a,b)=>new Date(b.connectedTime||b.startTime||0)-new Date(a.connectedTime||a.startTime||0))[0]||null;
+}
+async function resolveCurrentAgentLeg(conversationId, reason){
+  if(!conversationId||transferResolutionLocks.has(conversationId))return;
+  transferResolutionLocks.add(conversationId);
+  const waits=[150,400,800,1400,2200,3200,4500];
+  try{
+    for(let i=0;i<waits.length;i++){
+      await delay(waits[i]);
+      let snapshot;
+      try{ snapshot=await getConversationSnapshot(conversationId); }
+      catch(e){ log('WARN',{transferLegResolveAttempt:i+1,conversationId,reason,error:e.message}); continue; }
+      const participants=snapshot?.participants||[];
+      const agent=findCurrentAgentParticipant(participants);
+      const comm=agent?getAgentCommunication(agent):{};
+      const info=agent?getAgentState(agent,comm):{state:'',note:''};
+      log('INFO',{transferLegResolveAttempt:i+1,conversationId,reason,agentParticipantId:agent?.id||'',agentCommunicationId:comm?.id||'',communicationState:comm?.state||'',resolved:!!(agent&&comm?.id&&info.state==='JOINED / CONNECTED')});
+      if(agent&&comm?.id&&info.state==='JOINED / CONNECTED'){
+        processConversationBody(snapshot,'conversation-refresh');
+        return;
+      }
+    }
+    log('WARN',{transferLegResolveExhausted:true,conversationId,reason,attempts:waits.length});
+  }finally{
+    transferResolutionLocks.delete(conversationId);
+  }
+}
 function getAgentCommunication(agent){
   const arr=(agent.messages||agent.sessions||agent.calls||[]).filter(s=>String(s.type||'').toLowerCase().includes('webmessaging'));
   if(!arr.length) return (agent.messages||agent.sessions||agent.calls||[])[0] || {};

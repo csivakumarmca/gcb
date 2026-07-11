@@ -84,3 +84,9 @@ ChatMonitor banner default update - v1.7.2.33
 - Default banner layout is light.
 - Use bannerLayout=dark only when dark preview is required.
 - Header compact sizing: min-height 50px, logo 40x40px, logo padding 0.
+
+
+Transfer leg resolver - v1.7.2.44
+- Re-reads the full messaging conversation when a transfer notification arrives before the new agent communication ID.
+- Selects only the logged-in user's latest agent participant and connected web messaging leg.
+- Does not fall back to another agent participant.
