@@ -86,7 +86,13 @@ ChatMonitor banner default update - v1.7.2.33
 - Header compact sizing: min-height 50px, logo 40x40px, logo padding 0.
 
 
-Transfer leg resolver - v1.7.2.44
+Transfer leg resolver - v1.7.2.45
 - Re-reads the full messaging conversation when a transfer notification arrives before the new agent communication ID.
 - Selects only the logged-in user's latest agent participant and connected web messaging leg.
 - Does not fall back to another agent participant.
+
+
+## Transfer agent greeting - v1.7.2.45
+- For a non-supervisor Agent 2 transfer, sends Agent Joined followed by Greeting.
+- Keeps transfer-leg resolver and communication-leg duplicate keys unchanged.
+- Supervisor transfers continue to send Supervisor Joined only.

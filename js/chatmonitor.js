@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.11';
+const APP_VERSION = 'v1.2.12';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -846,13 +846,15 @@ async function getJoinedDecision(rec){
   const roleInfo=await getUserRoleInfo(rec.agentUserId,false,cfg.supervisorKeyword);
   const roleNames=(roleInfo.roleNames||[]).join(', ');
   const isSupervisor=!!roleInfo.isSupervisor;
-  log(roleInfo.roleLookupFailed?'WARN':isSupervisor?'OK':'INFO',{transferRoleDecision:true,conversationId:rec.conversationId,agentUserId:rec.agentUserId,agentName:rec.agentName,roleNames,isSupervisor,supervisorKeyword:cfg.supervisorKeyword,roleLookupFailed:roleInfo.roleLookupFailed,authorizationScopeMissing:roleInfo.authorizationScopeMissing,rule:'Initial chat => Agent Joined; Transfer + supervisor keyword match => Supervisor Joined; Transfer + non-supervisor => Agent Joined'});
+  log(roleInfo.roleLookupFailed?'WARN':isSupervisor?'OK':'INFO',{transferRoleDecision:true,conversationId:rec.conversationId,agentUserId:rec.agentUserId,agentName:rec.agentName,roleNames,isSupervisor,supervisorKeyword:cfg.supervisorKeyword,roleLookupFailed:roleInfo.roleLookupFailed,authorizationScopeMissing:roleInfo.authorizationScopeMissing,rule:'Initial chat => Agent Joined + Greeting; Transfer + supervisor keyword match => Supervisor Joined; Transfer + non-supervisor => Agent Joined + Greeting'});
   if(isSupervisor){
     const messages=supervisorJoinedText ? [{messageType:'SUPERVISOR_JOINED', text:supervisorJoinedText, duplicateType:'SUPERVISOR_JOINED'}] : [];
     return {messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE', messages, roleNames, supervisorRole:true, reason:'Transfer detected and connected user has Supervisor role.'};
   }
-  const messages=agentJoinedText ? [{messageType:'AGENT_JOINED', text:agentJoinedText, duplicateType:'AGENT_JOINED'}] : [];
-  return {messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE', messages, roleNames, supervisorRole:false, reason:'Transfer detected but connected user does not have Supervisor role.'};
+  const messages=[];
+  if(agentJoinedText) messages.push({messageType:'AGENT_JOINED', text:agentJoinedText, duplicateType:'AGENT_JOINED'});
+  if(greetingText) messages.push({messageType:'GREETING', text:greetingText, duplicateType:'GREETING'});
+  return {messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE', messages, roleNames, supervisorRole:false, reason:'Transfer detected for a non-supervisor agent. Agent Joined is sent first, followed by Greeting when configured.'};
 }
 async function getConversationSnapshot(conversationId){
   // Used only for duplicate/lock verification. The notification event remains the primary monitor source.
