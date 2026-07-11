@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.13';
+const APP_VERSION = 'v1.2.12';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -420,36 +420,6 @@ async function getMe(){
     await refreshLoggedInUserRoleDisplay();
   }catch(e){ log('ERROR',e.message); }
 }
-
-const ACTIVE_INTERACTION_CONTEXT_KEY='AFT_GCB_ACTIVE_INTERACTION_CONTEXT_V1';
-const activeInteractionRecoverySeen=new Map();
-function parseActiveInteractionContext(raw){
-  try{
-    const ctx=typeof raw==='string'?JSON.parse(raw):raw;
-    if(!ctx||!ctx.conversationId)return null;
-    const age=Date.now()-Date.parse(ctx.updatedAt||0);
-    if(!Number.isFinite(age)||age<0||age>10*60*1000)return null;
-    return ctx;
-  }catch(_){return null;}
-}
-function recoverActiveInteractionContext(raw, reason='startup'){
-  const ctx=parseActiveInteractionContext(raw);
-  if(!ctx||!currentUser?.id)return;
-  const last=activeInteractionRecoverySeen.get(ctx.conversationId)||0;
-  if(Date.now()-last<3000)return;
-  activeInteractionRecoverySeen.set(ctx.conversationId,Date.now());
-  log('INFO',{activeInteractionRecovery:true,reason,conversationId:ctx.conversationId});
-  resolveCurrentAgentLeg(ctx.conversationId,'active-interaction-'+reason);
-}
-function startActiveInteractionRecovery(){
-  try{ recoverActiveInteractionContext(localStorage.getItem(ACTIVE_INTERACTION_CONTEXT_KEY),'startup'); }catch(_){}
-  window.addEventListener('storage',e=>{
-    if(e.key===ACTIVE_INTERACTION_CONTEXT_KEY&&e.newValue){
-      recoverActiveInteractionContext(e.newValue,'storage-event');
-    }
-  });
-}
-
 async function startMonitor(){
   try{
     if(!currentUser) await getMe(); if(!currentUser?.id) throw new Error('Cannot start without logged-in user ID.'); await stopMonitor(false);
@@ -457,7 +427,7 @@ async function startMonitor(){
     const topic=`v2.users.${currentUser.id}.conversations`;
     await api(`/api/v2/notifications/channels/${channel.id}/subscriptions`,{method:'PUT',body:JSON.stringify([{id:topic}])}); log('OK',`Subscribed to ${topic}`);
     notifySocket=new WebSocket(channel.connectUri);
-    notifySocket.onopen=()=>{ $('monitorStatus').textContent='Running'; updateDashboardStatus(); log('OK','Notification WebSocket connected.'); addAgentMsg('CSK System','Monitor running. Waiting for assigned/connected chats.','system'); startActiveInteractionRecovery(); window.setTimeout(()=>{ try{ recoverActiveInteractionContext(localStorage.getItem(ACTIVE_INTERACTION_CONTEXT_KEY),'delayed-startup'); }catch(_){} },1200); };
+    notifySocket.onopen=()=>{ $('monitorStatus').textContent='Running'; updateDashboardStatus(); log('OK','Notification WebSocket connected.'); addAgentMsg('CSK System','Monitor running. Waiting for assigned/connected chats.','system'); };
     notifySocket.onerror=()=>log('ERROR','Notification WebSocket error. Check token, permissions, and network.');
     notifySocket.onclose=(e)=>{ $('monitorStatus').textContent='Stopped'; updateDashboardStatus(); log('WARN',`Notification WebSocket closed. code=${e.code} reason=${e.reason||'-'}`); };
     notifySocket.onmessage=(event)=>{ let msg; try{msg=JSON.parse(event.data)}catch(e){msg=event.data} const isHeartbeat = msg && msg.topicName==='channel.metadata' && msg.eventBody && msg.eventBody.message==='WebSocket Heartbeat'; if($('adminVerbose').checked && !isHeartbeat) log('INFO',msg); handleNotification(msg); };

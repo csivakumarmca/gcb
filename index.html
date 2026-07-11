@@ -308,30 +308,6 @@
         }
       }
 
-
-      // Publish the active Agent Script interaction for ChatMonitor startup recovery.
-      // ChatMonitor uses this only to fetch the authoritative Genesys conversation snapshot;
-      // message sending still requires the logged-in agent's connected communication leg.
-      const GCB_ACTIVE_INTERACTION_CONTEXT_KEY = "AFT_GCB_ACTIVE_INTERACTION_CONTEXT_V1";
-      function publishActiveInteractionContext() {
-        if (!CURRENT_CONVERSATION_ID) return;
-        const context = {
-          conversationId: CURRENT_CONVERSATION_ID,
-          agentCommunicationId: C.safeString(INDEX_PARAMS.get("agentCommunicationId") || ""),
-          agentParticipantId: C.safeString(INDEX_PARAMS.get("agentParticipantId") || ""),
-          customerCommunicationId: C.safeString(INDEX_PARAMS.get("customerCommunicationId") || ""),
-          customerParticipantId: C.safeString(INDEX_PARAMS.get("customerParticipantId") || ""),
-          source: C.safeString(INDEX_PARAMS.get("source") || "AgentScript"),
-          updatedAt: new Date().toISOString()
-        };
-        try {
-          localStorage.setItem(GCB_ACTIVE_INTERACTION_CONTEXT_KEY, JSON.stringify(context));
-          debugLog("INFO", "ACTIVE_INTERACTION_CONTEXT_PUBLISHED", "conversationId=" + CURRENT_CONVERSATION_ID);
-        } catch (e) {
-          debugLog("WARN", "ACTIVE_INTERACTION_CONTEXT_PUBLISH_FAILED", e && e.message ? e.message : String(e));
-        }
-      }
-
       function startCentralHoldMonitor() {
         if (centralHoldMonitorStarted) return;
         centralHoldMonitorStarted = true;
@@ -468,8 +444,6 @@
       }
 
       async function start() {
-        publishActiveInteractionContext();
-        if (CURRENT_CONVERSATION_ID) window.setInterval(publishActiveInteractionContext, 5000);
         setupButtons();
         renderMeta(null);
         renderCentralLogs();
