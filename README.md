@@ -168,3 +168,11 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Agent and supervisor transfers: `AFT_GCB_TransferGreetingText_EN` / `_AR`.
 - Architect selects with-subject versus without-subject templates and writes the final formatted values.
 - Agent-screen hold alert text uses one common attribute per message.
+
+## v1.7.2.57 participant-config status fix
+
+- GCB Participant Config Status now shows exactly the 42 participant attributes populated from `PROD_AFT_GCB_Config`.
+- Removed unrelated optional/runtime-only attributes from the status table.
+- Summary now displays `Data Table Participant Config: x/42 OK`.
+- Added a cache-buster to `chatmonitor.js`.
+- No greeting, joined-message, transfer, duplicate-control, or send logic was changed.

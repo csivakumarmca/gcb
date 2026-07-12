@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.20';
+const APP_VERSION = 'v1.2.21';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -60,7 +60,6 @@ const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'PROSPECTS', name:'AFT_GCB_ContactReasonSeparator', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_WrapupNameSeparator', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_CreateWrapupIfMissing', required:true},
-  {group:'PROSPECTS_OPTIONAL', name:'AFT_GCB_InteractionOutcomeSeparator', required:false},
   {group:'CHATMONITOR', name:'AFT_GCB_SupportRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_AdminRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_SupervisorKeywordDefault', required:true},
@@ -76,10 +75,7 @@ const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'CHAT_MESSAGE_TRANSFER', name:'AFT_GCB_TransferGreetingText_EN', required:true},
   {group:'CHAT_MESSAGE_TRANSFER', name:'AFT_GCB_TransferGreetingText_AR', required:true},
   {group:'CHAT_MESSAGE_TRANSFER_SOURCE', name:'AFT_GCB_TransferGreetingTextWithoutSubject_EN', required:true},
-  {group:'CHAT_MESSAGE_TRANSFER_SOURCE', name:'AFT_GCB_TransferGreetingTextWithoutSubject_AR', required:true},
-  {group:'CHATMONITOR_UI', name:'AFT_GCB_BannerLayout', required:false},
-  {group:'DUPLICATE_CONTROL', name:'AFT_GCB_JoinedSentKeys', required:false},
-  {group:'DUPLICATE_CONTROL', name:'AFT_GCB_GREETING_SENT_KEYS', required:false}
+  {group:'CHAT_MESSAGE_TRANSFER_SOURCE', name:'AFT_GCB_TransferGreetingTextWithoutSubject_AR', required:true}
 ];
 
 
@@ -1202,7 +1198,7 @@ function refreshParticipantConfigStatus(){
   const required=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required).length;
   const okRequired=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required && normalizeAttrValueForStatus(attrs[x.name])).length;
   const missing=required-okRequired;
-  const summary=rec ? `Conversation: ${shortId(rec.conversationId)} | Required OK: ${okRequired}/${required} | Missing: ${missing}` : 'Waiting for active conversation participant data.';
+  const summary=rec ? `Conversation: ${shortId(rec.conversationId)} | Data Table Participant Config: ${okRequired}/${required} OK | Missing: ${missing}` : 'Waiting for active conversation participant data.';
   const rows=rec ? buildConfigStatusRows(attrs) : '<tr><td class="small" colspan="3">No participant data loaded yet.</td></tr>';
   const supportBody=$('supportConfigStatus'); if(supportBody) supportBody.innerHTML=rows;
   const adminBody=$('adminConfigStatus'); if(adminBody) adminBody.innerHTML=rows;
