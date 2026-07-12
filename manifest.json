@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.52-post-mfa-active-recovery",
+  "version": "v1.7.2.54-supervisor-greeting-config",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -29,12 +29,13 @@
     "chatmonitor.html is split into css/chatmonitor.css and js/chatmonitor.js.",
     "Direct business pages silently start OAuth/MFA only when token is missing, then index.html restores the original page URL after login.",
     "v1.7.2.47 reapplies safe UI, diagnostic download, and OAuth/MFA refresh recovery enhancements on top of the confirmed v1.7.2.45 transfer-working baseline without changing ChatMonitor send/transfer logic.",
-    "v1.7.2.49 replaces the long Role list in Support View with the Agent Participant ID and current communication state, improving transfer troubleshooting without changing ChatMonitor send or transfer logic."
+    "v1.7.2.49 replaces the long Role list in Support View with the Agent Participant ID and current communication state, improving transfer troubleshooting without changing ChatMonitor send or transfer logic.",
+    "v1.7.2.54 makes the supervisor-transfer Greeting configurable through participant attribute AFT_GCB_SendGreetingForSupervisor. true sends SUPERVISOR_JOINED then GREETING; false or missing sends SUPERVISOR_JOINED only."
   ],
   "fileMetadata": {
     "author": "Sivakumar Chandrahasu",
     "created": "2026-07-07",
-    "updated": "2026-07-11",
+    "updated": "2026-07-12",
     "purpose": [
       "GCB package manifest for page inventory, version, and routing reference.",
       "Keeps package metadata aligned with the deployed static file set."

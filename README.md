@@ -135,3 +135,18 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Interaction index pages publish recent conversation IDs to same-origin localStorage.
 - After ChatMonitor OAuth/MFA completion and notification subscription, it performs a one-time fetch of recent active interaction conversations and passes valid connected snapshots into the existing processing function.
 - Adds clipboard legacy fallback and stronger index diagnostic download fallback.
+
+
+## v1.7.2.53 supervisor transfer greeting
+- Transfer to a user with a Supervisor role now sends SUPERVISOR_JOINED first and GREETING second when configured.
+- Initial Agent 1 and non-supervisor Agent 2 joined/greeting behavior is unchanged.
+- Transfer detection, communication-leg resolution, duplicate-control, post-MFA recovery, Hold/Resume, Prospects, and diagnostics are unchanged.
+
+
+## v1.7.2.54 configurable supervisor greeting
+
+- Added optional participant attribute `AFT_GCB_SendGreetingForSupervisor`.
+- `true`: supervisor transfer sends `SUPERVISOR_JOINED` followed by `GREETING` when the greeting text is configured.
+- `false` or missing/invalid: supervisor transfer sends only `SUPERVISOR_JOINED`.
+- Default is `false` to avoid an unexpected greeting when the Data Table/participant mapping has not yet been deployed.
+- No changes were made to initial Agent 1, non-supervisor transfer, communication-leg resolution, duplicate-control, Hold/Resume, Prospects, OAuth/MFA, or diagnostic behavior.

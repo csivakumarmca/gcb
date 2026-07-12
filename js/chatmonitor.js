@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.16';
+const APP_VERSION = 'v1.2.18';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -68,6 +68,7 @@ const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'CHATMONITOR', name:'AFT_GCB_SupportRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_AdminRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_SupervisorKeywordDefault', required:true},
+  {group:'CHATMONITOR', name:'AFT_GCB_SendGreetingForSupervisor', required:false},
   {group:'CHATMONITOR_UI', name:'AFT_GCB_BannerLayout', required:false},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_EN', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_AR', required:true},
@@ -783,6 +784,14 @@ function cleanGcbText(value){
   if(!text || ['null','undefined','--na--','na','n/a'].includes(text.toLowerCase())) return '';
   return text;
 }
+
+function parseConfigBoolean(value, defaultValue=false){
+  const normalized=cleanGcbText(value).toLowerCase();
+  if(!normalized) return !!defaultValue;
+  if(['true','1','yes','y','on','enabled'].includes(normalized)) return true;
+  if(['false','0','no','n','off','disabled'].includes(normalized)) return false;
+  return !!defaultValue;
+}
 function getConversationLanguage(attrs={}){
   return cleanGcbText(attrs.language || attrs.Language || attrs.AFT_Language || attrs.Chat_Language || attrs.SI_Language || attrs.customerLanguage || 'en').toLowerCase();
 }
@@ -802,6 +811,7 @@ function getGcbMessageConfig(attrs={}){
     supervisorJoinedText: pickLangText(attrs, 'AFT_GCB_SupervisorJoinedText', 'AFT_GCB_SupervisorJoinedText_EN', 'AFT_GCB_SupervisorJoinedText_AR'),
     supervisorKeyword,
     greetingText: pickLangText(attrs, 'AFT_GCB_GreetingText', 'AFT_GCB_GreetingText_EN', 'AFT_GCB_GreetingText_AR'),
+    sendGreetingForSupervisor: parseConfigBoolean(attrs.AFT_GCB_SendGreetingForSupervisor, false),
     supportRolesText: supportRoles,
     adminRolesText: adminRoles,
     bannerLayout: normalizeBannerLayout(getBannerLayoutFromAttrs(attrs) || 'light')
@@ -963,10 +973,20 @@ async function getJoinedDecision(rec){
   const roleInfo=await getUserRoleInfo(rec.agentUserId,false,cfg.supervisorKeyword);
   const roleNames=(roleInfo.roleNames||[]).join(', ');
   const isSupervisor=!!roleInfo.isSupervisor;
-  log(roleInfo.roleLookupFailed?'WARN':isSupervisor?'OK':'INFO',{transferRoleDecision:true,conversationId:rec.conversationId,agentUserId:rec.agentUserId,agentName:rec.agentName,roleNames,isSupervisor,supervisorKeyword:cfg.supervisorKeyword,roleLookupFailed:roleInfo.roleLookupFailed,authorizationScopeMissing:roleInfo.authorizationScopeMissing,rule:'Initial chat => Agent Joined + Greeting; Transfer + supervisor keyword match => Supervisor Joined; Transfer + non-supervisor => Agent Joined + Greeting'});
+  log(roleInfo.roleLookupFailed?'WARN':isSupervisor?'OK':'INFO',{transferRoleDecision:true,conversationId:rec.conversationId,agentUserId:rec.agentUserId,agentName:rec.agentName,roleNames,isSupervisor,supervisorKeyword:cfg.supervisorKeyword,sendGreetingForSupervisor:cfg.sendGreetingForSupervisor,roleLookupFailed:roleInfo.roleLookupFailed,authorizationScopeMissing:roleInfo.authorizationScopeMissing,rule:'Initial chat => Agent Joined + Greeting; Transfer + supervisor keyword match => Supervisor Joined plus optional Greeting controlled by AFT_GCB_SendGreetingForSupervisor; Transfer + non-supervisor => Agent Joined + Greeting'});
   if(isSupervisor){
-    const messages=supervisorJoinedText ? [{messageType:'SUPERVISOR_JOINED', text:supervisorJoinedText, duplicateType:'SUPERVISOR_JOINED'}] : [];
-    return {messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE', messages, roleNames, supervisorRole:true, reason:'Transfer detected and connected user has Supervisor role.'};
+    const messages=[];
+    if(supervisorJoinedText) messages.push({messageType:'SUPERVISOR_JOINED', text:supervisorJoinedText, duplicateType:'SUPERVISOR_JOINED'});
+    if(cfg.sendGreetingForSupervisor && greetingText) messages.push({messageType:'GREETING', text:greetingText, duplicateType:'GREETING'});
+    return {
+      messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE',
+      messages,
+      roleNames,
+      supervisorRole:true,
+      reason:cfg.sendGreetingForSupervisor
+        ? 'Transfer detected and connected user has Supervisor role. Supervisor Joined is sent first, followed by Greeting because AFT_GCB_SendGreetingForSupervisor=true.'
+        : 'Transfer detected and connected user has Supervisor role. Only Supervisor Joined is sent because AFT_GCB_SendGreetingForSupervisor is false or missing.'
+    };
   }
   const messages=[];
   if(agentJoinedText) messages.push({messageType:'AGENT_JOINED', text:agentJoinedText, duplicateType:'AGENT_JOINED'});
