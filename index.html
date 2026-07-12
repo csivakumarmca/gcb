@@ -104,7 +104,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.54-supervisor-greeting-config";
+      const ROUTER_VERSION = "v1.7.2.56-language-specific-customer-messages";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -129,13 +129,15 @@
         "AFT_GCB_AlertBlinkDurationMs","AFT_GCB_AlertSoundEnabled","AFT_GCB_AlertSoundRepeatCount",
         "AFT_GCB_AlertSoundDurationMs","AFT_GCB_AlertSoundGapMs","AFT_GCB_BrowserNotificationEnabled",
         "AFT_GCB_TaskbarBlinkEnabled","AFT_GCB_TitleBlinkDurationMs","AFT_GCB_NotificationAutoCloseMs",
-        "AFT_GCB_HoldMaxTimeAlertText_EN","AFT_GCB_HoldMaxTimeAlertText_AR","AFT_GCB_HoldMaxAttemptsAlertText_EN",
-        "AFT_GCB_HoldMaxAttemptsAlertText_AR","AFT_GCB_HoldAlertTitle_EN","AFT_GCB_HoldAlertTitle_AR",
-        "AFT_GCB_AutoResumeSentText_EN","AFT_GCB_AutoResumeSentText_AR","AFT_GCB_ProspectsTypeDataTableId",
+        "AFT_GCB_HoldMaxTimeAlertText","AFT_GCB_HoldMaxAttemptsAlertText","AFT_GCB_HoldAlertTitle",
+        "AFT_GCB_AutoResumeSentText","AFT_GCB_ProspectsTypeDataTableId",
         "AFT_GCB_ProspectsMappingDataTableId","AFT_GCB_InteractionOutcomeMultiSelect","AFT_GCB_ContactReasonSeparator",
         "AFT_GCB_WrapupNameSeparator","AFT_GCB_CreateWrapupIfMissing","AFT_GCB_SupportRoles","AFT_GCB_AdminRoles",
         "AFT_GCB_SupervisorKeywordDefault","AFT_GCB_AgentJoinedText_EN","AFT_GCB_AgentJoinedText_AR",
-        "AFT_GCB_SupervisorJoinedText_EN","AFT_GCB_SupervisorJoinedText_AR","AFT_GCB_GreetingText_EN","AFT_GCB_GreetingText_AR"
+        "AFT_GCB_SupervisorJoinedText_EN","AFT_GCB_SupervisorJoinedText_AR","AFT_GCB_GreetingText_EN","AFT_GCB_GreetingText_AR",
+        "AFT_GCB_GreetingTextWithoutSubject_EN","AFT_GCB_GreetingTextWithoutSubject_AR",
+        "AFT_GCB_SendGreetingForSupervisor","AFT_GCB_TransferGreetingText_EN","AFT_GCB_TransferGreetingText_AR",
+        "AFT_GCB_TransferGreetingTextWithoutSubject_EN","AFT_GCB_TransferGreetingTextWithoutSubject_AR"
       ];
       let centralHoldMonitorStarted = false;
       let centralHoldMonitorBusy = false;

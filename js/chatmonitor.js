@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.18';
+const APP_VERSION = 'v1.2.20';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -50,14 +50,10 @@ const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'HOLD_ALERT', name:'AFT_GCB_TaskbarBlinkEnabled', required:true},
   {group:'HOLD_ALERT', name:'AFT_GCB_TitleBlinkDurationMs', required:true},
   {group:'HOLD_ALERT', name:'AFT_GCB_NotificationAutoCloseMs', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxTimeAlertText_EN', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxTimeAlertText_AR', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxAttemptsAlertText_EN', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxAttemptsAlertText_AR', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_HoldAlertTitle_EN', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_HoldAlertTitle_AR', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_AutoResumeSentText_EN', required:true},
-  {group:'HOLD_LABEL', name:'AFT_GCB_AutoResumeSentText_AR', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxTimeAlertText', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxAttemptsAlertText', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_HoldAlertTitle', required:true},
+  {group:'HOLD_LABEL', name:'AFT_GCB_AutoResumeSentText', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_ProspectsTypeDataTableId', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_ProspectsMappingDataTableId', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_InteractionOutcomeMultiSelect', required:true},
@@ -68,17 +64,20 @@ const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'CHATMONITOR', name:'AFT_GCB_SupportRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_AdminRoles', required:true},
   {group:'CHATMONITOR', name:'AFT_GCB_SupervisorKeywordDefault', required:true},
-  {group:'CHATMONITOR', name:'AFT_GCB_SendGreetingForSupervisor', required:false},
-  {group:'CHATMONITOR_UI', name:'AFT_GCB_BannerLayout', required:false},
+  {group:'CHATMONITOR', name:'AFT_GCB_SendGreetingForSupervisor', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_EN', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_AgentJoinedText_AR', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_SupervisorJoinedText_EN', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_SupervisorJoinedText_AR', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_GreetingText_EN', required:true},
   {group:'CHAT_MESSAGE', name:'AFT_GCB_GreetingText_AR', required:true},
-  {group:'CHAT_MESSAGE_FINAL', name:'AFT_GCB_AgentJoinedText', required:false},
-  {group:'CHAT_MESSAGE_FINAL', name:'AFT_GCB_SupervisorJoinedText', required:false},
-  {group:'CHAT_MESSAGE_FINAL', name:'AFT_GCB_GreetingText', required:false},
+  {group:'CHAT_MESSAGE_SOURCE', name:'AFT_GCB_GreetingTextWithoutSubject_EN', required:true},
+  {group:'CHAT_MESSAGE_SOURCE', name:'AFT_GCB_GreetingTextWithoutSubject_AR', required:true},
+  {group:'CHAT_MESSAGE_TRANSFER', name:'AFT_GCB_TransferGreetingText_EN', required:true},
+  {group:'CHAT_MESSAGE_TRANSFER', name:'AFT_GCB_TransferGreetingText_AR', required:true},
+  {group:'CHAT_MESSAGE_TRANSFER_SOURCE', name:'AFT_GCB_TransferGreetingTextWithoutSubject_EN', required:true},
+  {group:'CHAT_MESSAGE_TRANSFER_SOURCE', name:'AFT_GCB_TransferGreetingTextWithoutSubject_AR', required:true},
+  {group:'CHATMONITOR_UI', name:'AFT_GCB_BannerLayout', required:false},
   {group:'DUPLICATE_CONTROL', name:'AFT_GCB_JoinedSentKeys', required:false},
   {group:'DUPLICATE_CONTROL', name:'AFT_GCB_GREETING_SENT_KEYS', required:false}
 ];
@@ -795,22 +794,21 @@ function parseConfigBoolean(value, defaultValue=false){
 function getConversationLanguage(attrs={}){
   return cleanGcbText(attrs.language || attrs.Language || attrs.AFT_Language || attrs.Chat_Language || attrs.SI_Language || attrs.customerLanguage || 'en').toLowerCase();
 }
-function pickLangText(attrs, finalName, enName, arName){
-  const finalValue = cleanGcbText(attrs[finalName] || '');
-  if(finalValue) return finalValue;
+function pickLanguageSpecificText(attrs, enName, arName){
   const lang = getConversationLanguage(attrs);
   const isArabic = lang === 'ar' || lang === 'arabic' || lang.includes('arabic');
-  return cleanGcbText(isArabic ? (attrs[arName] || attrs[enName] || '') : (attrs[enName] || attrs[arName] || ''));
+  return cleanGcbText(isArabic ? (attrs[arName] || '') : (attrs[enName] || ''));
 }
 function getGcbMessageConfig(attrs={}){
   const supervisorKeyword = cleanGcbText(attrs.AFT_GCB_SupervisorKeyword || attrs.AFT_GCB_SupervisorKeywordDefault || 'supervisor') || 'supervisor';
   const supportRoles = cleanGcbText(attrs.AFT_GCB_SupportRoles || '');
   const adminRoles = cleanGcbText(attrs.AFT_GCB_AdminRoles || '');
   const cfg = {
-    agentJoinedText: pickLangText(attrs, 'AFT_GCB_AgentJoinedText', 'AFT_GCB_AgentJoinedText_EN', 'AFT_GCB_AgentJoinedText_AR'),
-    supervisorJoinedText: pickLangText(attrs, 'AFT_GCB_SupervisorJoinedText', 'AFT_GCB_SupervisorJoinedText_EN', 'AFT_GCB_SupervisorJoinedText_AR'),
+    agentJoinedText: pickLanguageSpecificText(attrs, 'AFT_GCB_AgentJoinedText_EN', 'AFT_GCB_AgentJoinedText_AR'),
+    supervisorJoinedText: pickLanguageSpecificText(attrs, 'AFT_GCB_SupervisorJoinedText_EN', 'AFT_GCB_SupervisorJoinedText_AR'),
     supervisorKeyword,
-    greetingText: pickLangText(attrs, 'AFT_GCB_GreetingText', 'AFT_GCB_GreetingText_EN', 'AFT_GCB_GreetingText_AR'),
+    greetingText: pickLanguageSpecificText(attrs, 'AFT_GCB_GreetingText_EN', 'AFT_GCB_GreetingText_AR'),
+    transferGreetingText: pickLanguageSpecificText(attrs, 'AFT_GCB_TransferGreetingText_EN', 'AFT_GCB_TransferGreetingText_AR'),
     sendGreetingForSupervisor: parseConfigBoolean(attrs.AFT_GCB_SendGreetingForSupervisor, false),
     supportRolesText: supportRoles,
     adminRolesText: adminRoles,
@@ -838,7 +836,7 @@ function applyGcbPlaceholders(text){
   return output.trim();
 }
 function getTextSourceLabel(config, key){
-  const map={agentJoinedText:'AFT_GCB_AgentJoinedText / _EN / _AR', supervisorJoinedText:'AFT_GCB_SupervisorJoinedText / _EN / _AR', supervisorKeyword:'AFT_GCB_SupervisorKeywordDefault', greetingText:'AFT_GCB_GreetingText / _EN / _AR'};
+  const map={agentJoinedText:'AFT_GCB_AgentJoinedText_EN / _AR', supervisorJoinedText:'AFT_GCB_SupervisorJoinedText_EN / _AR', supervisorKeyword:'AFT_GCB_SupervisorKeywordDefault', greetingText:'AFT_GCB_GreetingText_EN / _AR', transferGreetingText:'AFT_GCB_TransferGreetingText_EN / _AR'};
   return config?.[key] ? map[key] : 'blank / skipped';
 }
 function getSupervisorKeywords(keywordText){
@@ -962,6 +960,8 @@ async function getJoinedDecision(rec){
   const agentJoinedText=applyGcbPlaceholders(cfg.agentJoinedText);
   const supervisorJoinedText=applyGcbPlaceholders(cfg.supervisorJoinedText);
   const greetingText=applyGcbPlaceholders(cfg.greetingText);
+  // Architect prepares the final language-specific transfer greeting before GCB sends it.
+  const transferGreetingText=applyGcbPlaceholders(cfg.transferGreetingText);
   // Initial queue assignment always uses Agent Joined, even when the user has a supervisor role.
   if(!rec.isTransferJoin){
     const messages=[];
@@ -977,7 +977,7 @@ async function getJoinedDecision(rec){
   if(isSupervisor){
     const messages=[];
     if(supervisorJoinedText) messages.push({messageType:'SUPERVISOR_JOINED', text:supervisorJoinedText, duplicateType:'SUPERVISOR_JOINED'});
-    if(cfg.sendGreetingForSupervisor && greetingText) messages.push({messageType:'GREETING', text:greetingText, duplicateType:'GREETING'});
+    if(cfg.sendGreetingForSupervisor && transferGreetingText) messages.push({messageType:'GREETING', text:transferGreetingText, duplicateType:'GREETING'});
     return {
       messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE',
       messages,
@@ -990,8 +990,8 @@ async function getJoinedDecision(rec){
   }
   const messages=[];
   if(agentJoinedText) messages.push({messageType:'AGENT_JOINED', text:agentJoinedText, duplicateType:'AGENT_JOINED'});
-  if(greetingText) messages.push({messageType:'GREETING', text:greetingText, duplicateType:'GREETING'});
-  return {messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE', messages, roleNames, supervisorRole:false, reason:'Transfer detected for a non-supervisor agent. Agent Joined is sent first, followed by Greeting when configured.'};
+  if(transferGreetingText) messages.push({messageType:'GREETING', text:transferGreetingText, duplicateType:'GREETING'});
+  return {messageType:messages.map(m=>m.messageType).join('+') || 'NO_MESSAGE', messages, roleNames, supervisorRole:false, reason:'Transfer detected for a non-supervisor agent. Agent Joined is sent first, followed by the final language-specific Transfer Greeting prepared by Architect.'};
 }
 async function getConversationSnapshot(conversationId){
   // Used only for duplicate/lock verification. The notification event remains the primary monitor source.

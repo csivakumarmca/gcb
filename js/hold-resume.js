@@ -514,10 +514,10 @@
       CONFIG.taskbarBlinkEnabled = attrBool(attrs, "AFT_GCB_TaskbarBlinkEnabled", CONFIG.taskbarBlinkEnabled);
       CONFIG.titleBlinkDurationMs = Math.max(3000, attrNumber(attrs, "AFT_GCB_TitleBlinkDurationMs", CONFIG.titleBlinkDurationMs, 3000));
       CONFIG.notificationAutoCloseMs = Math.max(3000, attrNumber(attrs, "AFT_GCB_NotificationAutoCloseMs", CONFIG.notificationAutoCloseMs, 3000));
-      CONFIG.holdMaxTimeAlertText = pickLocalizedAttr(attrs, "AFT_GCB_HoldMaxTimeAlertText_EN", "AFT_GCB_HoldMaxTimeAlertText_AR", CONFIG.holdMaxTimeAlertText);
-      CONFIG.holdMaxAttemptsAlertText = pickLocalizedAttr(attrs, "AFT_GCB_HoldMaxAttemptsAlertText_EN", "AFT_GCB_HoldMaxAttemptsAlertText_AR", CONFIG.holdMaxAttemptsAlertText);
-      CONFIG.holdAlertTitle = pickLocalizedAttr(attrs, "AFT_GCB_HoldAlertTitle_EN", "AFT_GCB_HoldAlertTitle_AR", CONFIG.holdAlertTitle);
-      CONFIG.autoResumeSentText = pickLocalizedAttr(attrs, "AFT_GCB_AutoResumeSentText_EN", "AFT_GCB_AutoResumeSentText_AR", CONFIG.autoResumeSentText);
+      CONFIG.holdMaxTimeAlertText = String(attrs.AFT_GCB_HoldMaxTimeAlertText || "").trim() || CONFIG.holdMaxTimeAlertText;
+      CONFIG.holdMaxAttemptsAlertText = String(attrs.AFT_GCB_HoldMaxAttemptsAlertText || "").trim() || CONFIG.holdMaxAttemptsAlertText;
+      CONFIG.holdAlertTitle = String(attrs.AFT_GCB_HoldAlertTitle || "").trim() || CONFIG.holdAlertTitle;
+      CONFIG.autoResumeSentText = String(attrs.AFT_GCB_AutoResumeSentText || "").trim() || CONFIG.autoResumeSentText;
       addDebug("GCB_CONFIG_APPLIED", "participantData=true | maxHoldAttempts=" + CONFIG.maxHoldAttempts + " | maxHoldTime=" + CONFIG.maxHoldTime + " | holdMessageText=" + CONFIG.holdMessageText + " | resumeMessageText=" + CONFIG.resumeMessageText);
     }
     async function loadGcbConfigFromParticipantData(token) {

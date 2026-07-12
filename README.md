@@ -150,3 +150,21 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - `false` or missing/invalid: supervisor transfer sends only `SUPERVISOR_JOINED`.
 - Default is `false` to avoid an unexpected greeting when the Data Table/participant mapping has not yet been deployed.
 - No changes were made to initial Agent 1, non-supervisor transfer, communication-leg resolution, duplicate-control, Hold/Resume, Prospects, OAuth/MFA, or diagnostic behavior.
+
+
+## v1.7.2.55 configurable transfer greetings
+
+- Added optional `AFT_GCB_AgentTransferGreetingText`.
+- Added optional `AFT_GCB_SupervisorTransferGreetingText`.
+- Initial chats continue to use `AFT_GCB_GreetingText` / language-specific greeting values.
+- Agent transfers use `AFT_GCB_AgentTransferGreetingText`; when blank or missing, the existing initial Greeting is used.
+- Supervisor transfers use `AFT_GCB_SupervisorTransferGreetingText` when `AFT_GCB_SendGreetingForSupervisor=true`; when blank or missing, the existing initial Greeting is used.
+- `AGENT_JOINED` and `SUPERVISOR_JOINED` text and website-dependent behavior are unchanged.
+
+## v1.7.2.56 language-specific customer messages
+
+- Customer-facing joined and greeting messages use only `_EN` / `_AR` attributes.
+- Initial greeting: `AFT_GCB_GreetingText_EN` / `_AR`.
+- Agent and supervisor transfers: `AFT_GCB_TransferGreetingText_EN` / `_AR`.
+- Architect selects with-subject versus without-subject templates and writes the final formatted values.
+- Agent-screen hold alert text uses one common attribute per message.
