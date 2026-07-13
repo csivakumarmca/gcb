@@ -350,7 +350,7 @@
   <script>
       const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const DEFAULT_GENESYS_REGION = "mypurecloud.ie";
-      const DEFAULT_APP_VERSION = "Prospects_v3.13";
+      const DEFAULT_APP_VERSION = "Prospects_v3.14";
       const STORAGE_CLIENT_ID = "gcb_clientId";
       const STORAGE_REGION = "gcb_region";
       const STORAGE_PROSPECTS_ORIGINAL_QUERY = "gcb_prospects_original_query";
@@ -364,8 +364,10 @@
       const STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED = "gcb_prospects_load_recovery_attempted";
       const context = {
         conversationId: getParam("conversationId"),
-        communicationId: getParam("communicationId"),
-        participantId: getParam("participantId"),
+        // Canonical Agent Script runtime parameters are preferred.
+        // Legacy aliases remain only as backward-compatible fallbacks.
+        communicationId: getParam("agentCommunicationId") || getParam("communicationId"),
+        participantId: getParam("agentParticipantId") || getParam("participantId"),
       };
 
       const OAUTH_CLIENT_ID = getParam("clientId") || sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_OAUTH_CLIENT_ID;
@@ -640,8 +642,8 @@
           `interactionOutcomeMultiSelect: ${String(INTERACTION_OUTCOME_MULTI_SELECT)}`,
           `loadRecoveryAttempted: ${sessionStorage.getItem(STORAGE_PROSPECTS_LOAD_RECOVERY_ATTEMPTED) || "false"}`,
           `conversationId: ${context.conversationId || "[missing]"}`,
-          `communicationId: ${context.communicationId || "[missing]"}`,
-          `participantId: ${context.participantId || "[missing]"}`,
+          `agentCommunicationId: ${context.communicationId || "[missing]"}`,
+          `agentParticipantId: ${context.participantId || "[missing]"}`,
           `region: ${GENESYS_REGION || "[missing]"}`,
           `clientId: ${OAUTH_CLIENT_ID || "[missing]"}`,
           `typeDataTableId: ${dataTableConfig.types || "[missing]"}`,
@@ -1286,7 +1288,7 @@
           "SEARCH_PROSPECT_DROPDOWN",
           `version::${APP_VERSION || "(blank)"}`,
           `conversationId::${context.conversationId || "(blank)"}`,
-          `participantId::${context.participantId || "(blank)"}`,
+          `agentParticipantId::${context.participantId || "(blank)"}`,
           `typeRows::${state.debugInfo.typeRows}`,
           `mappingRows::${state.debugInfo.mappingRows}`,
           `activeMappingRows::${state.debugInfo.activeMappingRows}`,
@@ -1356,7 +1358,7 @@
           return;
         }
         if (!context.conversationId || !context.participantId || !context.communicationId) {
-          showValidationError("Missing conversationId, participantId or communicationId", submitButton);
+          showValidationError("Missing conversationId, agentParticipantId or agentCommunicationId", submitButton);
           return;
         }
 
@@ -1449,8 +1451,8 @@
           "ASSIGN_WRAPUP_CODE_TO_INTERACTION",
           `version::${APP_VERSION || "(blank)"}`,
           `conversationId::${context.conversationId || "(blank)"}`,
-          `participantId::${context.participantId || "(blank)"}`,
-          `communicationId::${context.communicationId || "(blank)"}`,
+          `agentParticipantId::${context.participantId || "(blank)"}`,
+          `agentCommunicationId::${context.communicationId || "(blank)"}`,
           `inquiry::${contact.label || "(blank)"}`,
           `wrapupName::${outcome.label || "(blank)"}`,
           `combinedWrapupCodeName::${state.debugInfo.wrapupCodeName || "(blank)"}`,

@@ -217,3 +217,11 @@ The active HTML pages now read business configuration directly from participant 
 - Reuses the v1.7.2.60 single-flight and message-detail cache, so previously loaded messages are not fetched again.
 - Preserves the higher local attempt count, hold duration, and segment history while Genesys transcript messages are still propagating.
 - No ChatMonitor joined/greeting/transfer/duplicate-control logic changed.
+
+## v1.7.2.62 Prospects canonical runtime ID fix
+
+- Prospects now reads `agentParticipantId` and `agentCommunicationId` from the Agent Script URL.
+- Legacy `participantId` and `communicationId` are retained only as backward-compatible fallbacks.
+- Submit validation now reports the canonical parameter names.
+- Prospects page version updated to `Prospects_v3.14`.
+- No Hold/Resume, ChatMonitor greeting, transfer, or duplicate-control logic changed.
