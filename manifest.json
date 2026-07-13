@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.60-hold-rate-limit-resume-fix",
+  "version": "v1.7.2.61-hold-count-sync-fix",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -35,7 +35,8 @@
     "v1.7.2.57 aligns ChatMonitor GCB Participant Config Status with the 42 actual Data Table participant attributes, removes four unrelated optional/runtime rows from that status table, updates the summary label, and adds a chatmonitor.js cache-buster. Message-send logic is unchanged.",
     "v1.7.2.58 removes maxHoldAttempts URL/participant override from Hold Summary and uses fixed fallback 3. Agent Script remains the owner of maximum hold-attempt enforcement. ChatMonitor greeting/transfer/send logic is unchanged.",
     "v1.7.2.59 aligns the active Hold Summary, Hold Timer, and Prospects HTML pages with Architect-populated participant attributes. URL business-configuration parameters no longer override Data Table values. Hold Summary keeps max hold attempts fixed at 3 as requested.",
-    "v1.7.2.60 prevents Hold Summary API storms by using a single active refresh, caching message details, reading full/current-session messages once, stopping immediately on HTTP 429, and removing full transcript reloads from timer storage/broadcast events. It also stops timer/title blinking immediately when Resume starts or the hold record is cleared. ChatMonitor send/transfer logic is unchanged."
+    "v1.7.2.60 prevents Hold Summary API storms by using a single active refresh, caching message details, reading full/current-session messages once, stopping immediately on HTTP 429, and removing full transcript reloads from timer storage/broadcast events. It also stops timer/title blinking immediately when Resume starts or the hold record is cleared. ChatMonitor send/transfer logic is unchanged.",
+    "v1.7.2.61 restores Hold Summary count synchronization after the v1.7.2.60 rate-limit optimization. A single debounced cached refresh runs after HOLD/RESUME timer events become quiet, and newer local attempt/count/time values are preserved when the Genesys transcript is temporarily delayed. ChatMonitor greeting/transfer logic is unchanged."
   ],
   "fileMetadata": {
     "author": "Sivakumar Chandrahasu",

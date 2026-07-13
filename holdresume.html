@@ -1607,12 +1607,23 @@
       return 0;
     }
 
-    function mergeSegmentList(existing, segment) {
+    function mergeSegmentList(existing, segmentOrList) {
       const values = safeString(existing)
         .split(",")
         .map(function (v) { return safeString(v).trim(); })
         .filter(Boolean);
-      if (segment && values[values.length - 1] !== segment) values.push(segment);
+
+      const additions = safeString(segmentOrList)
+        .split(",")
+        .map(function (v) { return safeString(v).trim(); })
+        .filter(Boolean);
+
+      additions.forEach(function (segment) {
+        if (!values.includes(segment) || values.filter(function (v) { return v === segment; }).length < additions.filter(function (v) { return v === segment; }).length) {
+          values.push(segment);
+        }
+      });
+
       return values.join(", ");
     }
 
@@ -2010,15 +2021,32 @@
       const fullHold = calculateHoldDetailsFromTranscript(fullItems);
       const currentHold = calculateHoldDetailsFromTranscript(currentItems);
 
+      const localSummary = normalizeSummary(latestSummary || loadCachedSummary() || buildInitialSummaryFromParams());
+      const localAttemptCount = getAttemptStartedCount();
+
       const data = {
-        CurrentSession_Hold_TotalCount: currentHold.Hold_TotalCount,
-        CurrentSession_Hold_TotalHHMMSS: currentHold.Hold_TotalHHMMSS,
-        CurrentSession_Hold_Total_Hours_Segment_List: currentHold.Hold_Total_Hours_Segment_List,
-        Hold_TotalCount: fullHold.Hold_TotalCount,
-        Hold_TotalHHMMSS: fullHold.Hold_TotalHHMMSS,
-        Hold_Total_Hours_Segment_List: fullHold.Hold_Total_Hours_Segment_List,
-        averageHoldTime: fullHold.averageHoldTime,
-        longestHoldTime: fullHold.longestHoldTime
+        CurrentSession_Hold_TotalCount: Math.max(currentHold.Hold_TotalCount, localSummary.currentHoldCount, localAttemptCount),
+        CurrentSession_Hold_TotalHHMMSS:
+          parseHHMMSSToSeconds(localSummary.currentHoldTime) > parseHHMMSSToSeconds(currentHold.Hold_TotalHHMMSS)
+            ? localSummary.currentHoldTime
+            : currentHold.Hold_TotalHHMMSS,
+        CurrentSession_Hold_Total_Hours_Segment_List:
+          mergeSegmentList(currentHold.Hold_Total_Hours_Segment_List, localSummary.currentSegments),
+        Hold_TotalCount: Math.max(fullHold.Hold_TotalCount, localSummary.totalHoldCount, localAttemptCount),
+        Hold_TotalHHMMSS:
+          parseHHMMSSToSeconds(localSummary.totalHoldTime) > parseHHMMSSToSeconds(fullHold.Hold_TotalHHMMSS)
+            ? localSummary.totalHoldTime
+            : fullHold.Hold_TotalHHMMSS,
+        Hold_Total_Hours_Segment_List:
+          mergeSegmentList(fullHold.Hold_Total_Hours_Segment_List, localSummary.holdHistory),
+        averageHoldTime:
+          parseHHMMSSToSeconds(localSummary.averageHoldTime) > parseHHMMSSToSeconds(fullHold.averageHoldTime)
+            ? localSummary.averageHoldTime
+            : fullHold.averageHoldTime,
+        longestHoldTime:
+          parseHHMMSSToSeconds(localSummary.longestHoldTime) > parseHHMMSSToSeconds(fullHold.longestHoldTime)
+            ? localSummary.longestHoldTime
+            : fullHold.longestHoldTime
       };
 
       applySummary(data);
@@ -2407,11 +2435,21 @@
         summaryRefreshFromTimerHandle = setTimeout(async function () {
           try {
             applyVisibleTimerFromCentralRecord(source || "TIMER_ACTION");
-            addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION_SKIPPED", safeString(source) + " | local timer state applied without full transcript reload.");
+
+            // Wait until HOLD/RESUME storage events become quiet, then perform one
+            // cached/single-flight refresh. Message details already read in this page
+            // session are reused, so only newly-created HOLD/RESUME messages are fetched.
+            if (Date.now() < summaryRefreshBlockedUntil) {
+              addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION_THROTTLED", safeString(source));
+              return;
+            }
+
+            await refreshHoldSummary(false);
+            addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION_OK", safeString(source) + " | debounced transcript sync completed.");
           } catch (err) {
             addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION_FAILED", err && err.message ? err.message : String(err));
           }
-        }, 1500);
+        }, 2500);
       } catch (_) {}
     }
 

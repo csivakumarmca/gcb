@@ -209,3 +209,11 @@ The active HTML pages now read business configuration directly from participant 
 - After-action summary refresh retries reduced to two.
 - Resume immediately clears widget blinking and browser-title blinking.
 - No ChatMonitor greeting, transfer, or duplicate-control logic changed.
+
+## v1.7.2.61 hold-count synchronization fix
+
+- Fixes Hold Summary remaining at `1 / 3` after a second Hold/Resume cycle.
+- Runs one debounced summary refresh after HOLD/RESUME storage/broadcast activity becomes quiet.
+- Reuses the v1.7.2.60 single-flight and message-detail cache, so previously loaded messages are not fetched again.
+- Preserves the higher local attempt count, hold duration, and segment history while Genesys transcript messages are still propagating.
+- No ChatMonitor joined/greeting/transfer/duplicate-control logic changed.
