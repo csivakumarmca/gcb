@@ -104,7 +104,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.66-hidden-monitor-autostart";
+      const ROUTER_VERSION = "v1.7.2.67-shared-runtime-config";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -387,6 +387,41 @@
         el.innerHTML = '<span class="' + cls + '">' + C.escapeHtml(statusText(status, defaultText)) + '</span>';
       }
 
+
+
+      const GCB_RUNTIME_CONFIG_KEY = "AFT_GCB_RUNTIME_CONFIG_V1";
+
+      function publishRuntimeConfiguration() {
+        try {
+          const params = new URLSearchParams(window.location.search || "");
+          const previous = JSON.parse(localStorage.getItem(GCB_RUNTIME_CONFIG_KEY) || "{}");
+          const next = {
+            langTag: C.safeString(params.get("langTag") || previous.langTag),
+            gcTargetEnv: C.safeString(params.get("gcTargetEnv") || previous.gcTargetEnv),
+            gcHostOrigin: C.safeString(params.get("gcHostOrigin") || previous.gcHostOrigin),
+            usePopupAuth: C.safeString(params.get("usePopupAuth") || previous.usePopupAuth),
+            clientId: C.safeString(params.get("clientId") || previous.clientId),
+            region: C.safeString(params.get("region") || previous.region),
+            source: C.safeString(params.get("source") || previous.source || "AgentScript"),
+            updatedAt: new Date().toISOString(),
+            publishedBy: "index.html"
+          };
+          const required = ["clientId", "region", "gcTargetEnv", "gcHostOrigin"];
+          const missing = required.filter(function(name){ return !next[name]; });
+          localStorage.setItem(GCB_RUNTIME_CONFIG_KEY, JSON.stringify(next));
+          debugLog(
+            missing.length ? "WARN" : "INFO",
+            "INDEX_RUNTIME_CONFIG_PUBLISHED",
+            "missing=" + (missing.join(",") || "none") +
+            " | region=" + (next.region || "") +
+            " | targetEnv=" + (next.gcTargetEnv || "")
+          );
+          return next;
+        } catch (error) {
+          debugLog("WARN", "INDEX_RUNTIME_CONFIG_PUBLISH_FAILED", error && error.message ? error.message : String(error));
+          return null;
+        }
+      }
 
       function getRuntimeParameters() {
         const params = new URLSearchParams(window.location.search || "");
@@ -750,6 +785,7 @@
         setupButtons();
         renderMeta(null);
         renderCentralLogs();
+        publishRuntimeConfiguration();
         setStatus("Checking OAuth / MFA...", "warning");
 
         if (await Auth.handleOAuthRedirectIfPresent()) return;

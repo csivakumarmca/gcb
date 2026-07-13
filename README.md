@@ -303,3 +303,51 @@ Versions:
 Recommended hidden URL:
 
 `<GCB_ROOT>/monitorwake.html?v=172266&conversationId=<value>&agentCommunicationId=<value>&agentParticipantId=<value>&customerCommunicationId=<value>&customerParticipantId=<value>&agentName=<value>&langTag=<value>&clientId=<OAuth client ID>&region=mypurecloud.ie&gcTargetEnv=prod-euw1&gcHostOrigin=https%3A%2F%2Fapps.mypurecloud.ie&usePopupAuth=false&source=AgentScript&forceStart=true`
+
+
+## v1.7.2.67-shared-runtime-config
+
+This patch removes duplicate OAuth/environment maintenance from the Agent Script `monitorwake.html` URL.
+
+### Configuration ownership
+
+Interaction Widget URL supplies and publishes:
+
+- `langTag`
+- `gcTargetEnv`
+- `gcHostOrigin`
+- `usePopupAuth`
+- `clientId`
+- `region`
+
+Agent Script `monitorwake.html` supplies:
+
+- `conversationId`
+- `agentCommunicationId`
+- `agentParticipantId`
+- `customerCommunicationId`
+- `customerParticipantId`
+- `agentName`
+- `source`
+- `forceStart`
+
+Shared runtime storage key:
+
+`AFT_GCB_RUNTIME_CONFIG_V1`
+
+### Agent Script expression
+
+```text
+{{AFT_URL_GCB_Root_URL}}
++ "/monitorwake.html?v=172267"
++ {{AFT_URL_GCB_Common_Params}}
++ "&forceStart=true"
+```
+
+Do not duplicate the Interaction Widget OAuth/environment parameters in the Agent Script expression.
+
+Versions:
+
+- GCB: `v1.7.2.67-shared-runtime-config`
+- ChatMonitor UI: `v1.2.26`
+- Cache: `172267`

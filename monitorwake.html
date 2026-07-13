@@ -20,6 +20,7 @@
   const WAKE_LAST_KEY = "AFT_GCB_MONITOR_WAKE_LAST_V1";
   const CONTEXTS_KEY = "AFT_GCB_INTERACTION_CONTEXTS_V1";
   const MONITOR_LEADER_KEY = "AFT_GCB_MONITOR_LEADER_V1";
+  const RUNTIME_CONFIG_KEY = "AFT_GCB_RUNTIME_CONFIG_V1";
   const MONITOR_AUTOSTART_DELAY_MS = 4500;
   const params = new URLSearchParams(location.search || "");
 
@@ -47,7 +48,7 @@
     agentName: value("agentName"),
     language: value("langTag") || value("language") || "",
     forceStart: boolValue("forceStart", true),
-    version: value("version") || "MonitorWake_v1.1"
+    version: value("version") || "MonitorWake_v1.2"
   };
 
   function saveInteractionContext(){
@@ -103,19 +104,55 @@
     }catch(_){ return false; }
   }
 
+  function readRuntimeConfiguration(){
+    try{
+      const value=JSON.parse(localStorage.getItem(RUNTIME_CONFIG_KEY)||"null");
+      if(!value || typeof value!=="object") return null;
+      return value;
+    }catch(_){ return null; }
+  }
+
   function buildAutoStartUrl(){
-    const next=new URLSearchParams(params);
-    next.set("v","172266");
+    const runtime=readRuntimeConfiguration()||{};
+    const next=new URLSearchParams();
+
+    // OAuth/environment ownership remains with the Interaction Widget URL.
+    [
+      "langTag",
+      "gcTargetEnv",
+      "gcHostOrigin",
+      "usePopupAuth",
+      "clientId",
+      "region"
+    ].forEach(function(name){
+      const value=String(runtime[name]||"").trim();
+      if(value) next.set(name,value);
+    });
+
+    // Current Agent Script interaction values override any stored values.
+    params.forEach(function(value,name){
+      if(name!=="v" && name!=="forceStart") next.set(name,value);
+    });
+
+    next.set("v","172267");
     next.set("page","chatmonitor");
     next.set("source","AgentScriptAutoStart");
     next.set("routedFrom","monitorwake");
     next.set("autoStarted","true");
-    next.delete("forceStart");
     return "index.html?" + next.toString();
   }
 
   function ensureMonitorLoaded(){
     if(hasActiveMonitor()) return;
+    const runtime=readRuntimeConfiguration();
+    const required=["clientId","region","gcTargetEnv","gcHostOrigin"];
+    const missing=required.filter(function(name){ return !String(runtime?.[name]||"").trim(); });
+    if(missing.length){
+      document.getElementById("status").textContent=
+        "Waiting for Interaction Widget runtime configuration: "+missing.join(", ");
+      setTimeout(ensureMonitorLoaded,2000);
+      return;
+    }
     location.replace(buildAutoStartUrl());
   }
 
