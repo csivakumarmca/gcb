@@ -235,3 +235,30 @@ The active HTML pages now read business configuration directly from participant 
 - ChatMonitor/Index Participant Config Status now expects `43/43` required GCB attributes.
 - Prospects page version: `Prospects_v3.15`; ChatMonitor UI: `v1.2.22`.
 - No ChatMonitor joined/greeting/transfer/duplicate-control logic changed.
+
+
+## v1.7.2.64 ChatMonitor OAuth/MFA and monitor recovery
+
+Technical-only changes:
+
+- OAuth token is validated during ChatMonitor startup.
+- Missing/expired authentication starts the shared PKCE/MFA recovery and restores the original ChatMonitor URL.
+- Browser tabs coordinate OAuth recovery using a temporary localStorage lock and BroadcastChannel/storage events.
+- Access tokens remain in each tab's sessionStorage; no access token is written to localStorage.
+- After another tab completes MFA, a waiting tab automatically performs its own PKCE round-trip using the existing Genesys SSO session.
+- Unexpected WebSocket closure automatically creates a new notification channel, resubscribes, and reconnects.
+- Recovery runs after visibility, focus, online, pageshow, and a 45-second local watchdog check.
+- Manual `stopMonitor()` remains stopped and does not auto-reconnect. `startMonitor()` restarts it.
+- Status values now include Starting, Checking OAuth, Waiting for OAuth / MFA, Reconnecting, Running, and Stopped manually.
+- ChatMonitor UI version: `v1.2.23`.
+- ChatMonitor script cache: `v=172264`.
+
+Protected business logic not changed:
+
+- Initial Agent Joined + Greeting
+- Transfer Agent Joined + Transfer Greeting
+- Supervisor greeting rules
+- Language-specific message selection
+- Duplicate-control and participant-data send keys
+- Hold/Resume
+- Prospects

@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.22';
+const APP_VERSION = 'v1.2.23';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -32,6 +32,14 @@ const DEFAULT_SUPPORT_ROLES = ['RAK IT Admin','RAK Script Admin','RAK Access con
 const DEFAULT_ADMIN_ROLES = ['AFT_Support','RAK IT Admin'];
 let latestGcbAccessConfig = { supportRoles: DEFAULT_SUPPORT_ROLES.slice(), adminRoles: DEFAULT_ADMIN_ROLES.slice(), supervisorKeyword: 'supervisor' };
 let currentBannerLayout = 'light';
+let manualStopRequested = false;
+let intentionalSocketClose = false;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let monitorStartPromise = null;
+let monitorWatchdogTimer = null;
+const MONITOR_RECONNECT_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+const MONITOR_WATCHDOG_MS = 45000;
 
 const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'HOLD', name:'AFT_GCB_HoldMessageText', required:true},
@@ -392,23 +400,21 @@ function loadClientAppParams(){
 async function init(){
   loadClientAppParams();
   $('redirectUri').value = getIndexRedirectUri();
-  await handleOAuthReturn();
   useTokenFromUrl(false);
-  if(!token() && window.RakAuth && window.RakAuth.getAccessToken){
-    const sharedToken = window.RakAuth.getAccessToken();
-    if(sharedToken){ $('accessToken').value = sharedToken; log('OK','Access token loaded from shared GCB OAuth session.'); }
-  }
   refreshTables();
   updateViewAccess({roleNames:[]});
-  if(token()){
-    try{ await getMe(); await startMonitor(); }
-    catch(e){ log('ERROR','Auto start failed: '+e.message); }
-  } else if($('clientId').value.trim()){
-    log('INFO','No access token found. Starting shared GCB PKCE login automatically.');
-    setTimeout(()=>loginPkce(), 300);
-  } else {
-    $('monitorStatus').textContent='Missing clientId';
+  installMonitorLifecycleRecovery();
+
+  if(!$('clientId').value.trim()){
+    setMonitorStatus('Missing clientId');
     log('ERROR','Missing clientId URL parameter. Add clientId=<Genesys OAuth Client ID>.');
+    return;
+  }
+
+  try{
+    await startMonitor({reason:'page-load'});
+  }catch(e){
+    log('ERROR','Auto start failed: '+e.message);
   }
 }
 function randomString(length=64){ const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'; const arr=new Uint8Array(length); crypto.getRandomValues(arr); return Array.from(arr,x=>chars[x%chars.length]).join(''); }
@@ -451,10 +457,24 @@ async function handleOAuthReturn(){
 }
 function useTokenFromUrl(showMsg=true){ const hash=new URLSearchParams(location.hash.replace(/^#/,'')); const query=new URLSearchParams(location.search); const t=hash.get('access_token')||query.get('access_token'); if(t){$('accessToken').value=t;if(showMsg)log('OK','Access token loaded from URL.')} else if(showMsg)log('WARN','No access_token found in URL.'); }
 async function api(path, opts={}){
-  if(!token()) throw new Error('Missing access token.');
+  if(!token()) {
+    const error = new Error('Missing access token.');
+    error.status = 401;
+    throw error;
+  }
   const res=await fetch(apiBase()+path,{...opts,headers:{'Authorization':'Bearer '+token(),'Content-Type':'application/json',...(opts.headers||{})}});
   const txt=await res.text(); let body=null; try{body=txt?JSON.parse(txt):null}catch(e){body=txt}
-  if(!res.ok) throw new Error(`${res.status} ${res.statusText}: ${txt}`); return body;
+  if(!res.ok){
+    const error = new Error(`${res.status} ${res.statusText}: ${txt}`);
+    error.status = res.status;
+    error.payload = body;
+    if(res.status===401 && window.RakAuth?.clearToken){
+      window.RakAuth.clearToken();
+      $('accessToken').value='';
+    }
+    throw error;
+  }
+  return body;
 }
 function getUserDisplayNickname(user){
   return user?.preferredName || user?.name || user?.email || '-';
@@ -499,7 +519,10 @@ async function getMe(){
     log('OK',`Logged-in agent: ${currentUser.name} (${currentUser.id})`);
     addAgentMsg('AFT GCB',`Logged in as ${currentUser.name}. Monitoring starts automatically.`,'system');
     await refreshLoggedInUserRoleDisplay();
-  }catch(e){ log('ERROR',e.message); }
+  }catch(e){
+    log('ERROR',e.message);
+    throw e;
+  }
 }
 
 async function recoverPublishedActiveInteractions(reason='post-mfa-startup'){
@@ -534,20 +557,211 @@ async function recoverPublishedActiveInteractions(reason='post-mfa-startup'){
   log('OK',{activeInteractionRecoveryComplete:true,reason,candidateCount:recent.length});
 }
 
-async function startMonitor(){
-  try{
-    if(!currentUser) await getMe(); if(!currentUser?.id) throw new Error('Cannot start without logged-in user ID.'); await stopMonitor(false);
-    channel=await api('/api/v2/notifications/channels',{method:'POST',body:'{}'}); $('channelId').textContent=channel.id||'-'; updateDashboardStatus(); log('OK',{createdChannel:channel.id,connectUri:channel.connectUri});
-    const topic=`v2.users.${currentUser.id}.conversations`;
-    await api(`/api/v2/notifications/channels/${channel.id}/subscriptions`,{method:'PUT',body:JSON.stringify([{id:topic}])}); log('OK',`Subscribed to ${topic}`);
-    notifySocket=new WebSocket(channel.connectUri);
-    notifySocket.onopen=()=>{ $('monitorStatus').textContent='Running'; updateDashboardStatus(); log('OK','Notification WebSocket connected.'); addAgentMsg('CSK System','Monitor running. Waiting for assigned/connected chats.','system'); recoverPublishedActiveInteractions('post-mfa-subscription').catch(e=>log('WARN',{activeInteractionRecoveryUnhandled:true,error:e.message})); };
-    notifySocket.onerror=()=>log('ERROR','Notification WebSocket error. Check token, permissions, and network.');
-    notifySocket.onclose=(e)=>{ $('monitorStatus').textContent='Stopped'; updateDashboardStatus(); log('WARN',`Notification WebSocket closed. code=${e.code} reason=${e.reason||'-'}`); };
-    notifySocket.onmessage=(event)=>{ let msg; try{msg=JSON.parse(event.data)}catch(e){msg=event.data} const isHeartbeat = msg && msg.topicName==='channel.metadata' && msg.eventBody && msg.eventBody.message==='WebSocket Heartbeat'; if($('adminVerbose').checked && !isHeartbeat) log('INFO',msg); handleNotification(msg); };
-  }catch(e){ log('ERROR',e.message); }
+function setMonitorStatus(value){
+  const el=$('monitorStatus');
+  if(el) el.textContent=value;
+  updateDashboardStatus();
 }
-async function stopMonitor(writeLog=true){ if(notifySocket){try{notifySocket.close()}catch(e){} notifySocket=null} $('monitorStatus').textContent='Stopped'; updateDashboardStatus(); if(writeLog)log('WARN','Monitor stopped.'); }
+
+function socketIsOpen(){
+  return !!notifySocket && notifySocket.readyState===WebSocket.OPEN;
+}
+
+function clearReconnectTimer(){
+  if(reconnectTimer){
+    clearTimeout(reconnectTimer);
+    reconnectTimer=null;
+  }
+}
+
+function closeMonitorSocket(){
+  clearReconnectTimer();
+  const socket=notifySocket;
+  notifySocket=null;
+  if(socket){
+    intentionalSocketClose=true;
+    try{socket.close()}catch(e){}
+    setTimeout(()=>{intentionalSocketClose=false;},0);
+  }
+}
+
+async function ensureAuthenticated(reason){
+  setMonitorStatus('Checking OAuth');
+  let activeToken=token();
+
+  if(!activeToken && window.RakAuth?.ensureToken){
+    setMonitorStatus('Waiting for OAuth / MFA');
+    log('INFO',{oauthRecoveryStarted:true,reason});
+    activeToken=await window.RakAuth.ensureToken({restoreUrl:window.location.href});
+    if(activeToken) $('accessToken').value=activeToken;
+  }
+
+  if(!token()){
+    setMonitorStatus('Waiting for OAuth / MFA');
+    throw new Error('OAuth/MFA recovery started. Waiting for page restoration.');
+  }
+
+  try{
+    await getMe();
+    log('OK',{tokenValidationSuccess:true,reason,userId:currentUser?.id||''});
+    return true;
+  }catch(e){
+    const isAuthError=window.RakAuth?.isAuthError ? window.RakAuth.isAuthError(e) : [401,403].includes(Number(e?.status||0));
+    if(!isAuthError) throw e;
+
+    log('WARN',{tokenValidationFailed:true,reason,status:e?.status||0});
+    $('accessToken').value='';
+    currentUser=null;
+    window.RakAuth?.clearToken?.();
+    setMonitorStatus('Waiting for OAuth / MFA');
+    await window.RakAuth.ensureToken({restoreUrl:window.location.href});
+    throw new Error('OAuth/MFA recovery started. Waiting for page restoration.');
+  }
+}
+
+function scheduleMonitorReconnect(reason){
+  if(manualStopRequested || reconnectTimer) return;
+  const delayMs=MONITOR_RECONNECT_DELAYS_MS[Math.min(reconnectAttempt,MONITOR_RECONNECT_DELAYS_MS.length-1)];
+  reconnectAttempt+=1;
+  setMonitorStatus('Reconnecting');
+  log('WARN',{monitorReconnectScheduled:true,reason,attempt:reconnectAttempt,delayMs});
+  reconnectTimer=setTimeout(async()=>{
+    reconnectTimer=null;
+    if(manualStopRequested) return;
+    try{
+      await startMonitor({reason:'reconnect-'+reason});
+    }catch(e){
+      log('WARN',{monitorReconnectAttemptFailed:true,reason,error:e.message});
+      scheduleMonitorReconnect(reason);
+    }
+  },delayMs);
+}
+
+async function startMonitor(options={}){
+  const reason=options.reason||'manual-start';
+  if(reason==='manual-start') manualStopRequested=false;
+  if(manualStopRequested && reason!=='manual-start'){
+    setMonitorStatus('Stopped manually');
+    return false;
+  }
+  if(socketIsOpen()){
+    setMonitorStatus('Running');
+    return true;
+  }
+  if(monitorStartPromise) return monitorStartPromise;
+
+  monitorStartPromise=(async()=>{
+    clearReconnectTimer();
+    setMonitorStatus(reconnectAttempt>0 ? 'Reconnecting' : 'Starting');
+
+    await ensureAuthenticated(reason);
+    if(!currentUser?.id) throw new Error('Cannot start without logged-in user ID.');
+
+    closeMonitorSocket();
+    channel=await api('/api/v2/notifications/channels',{method:'POST',body:'{}'});
+    $('channelId').textContent=channel.id||'-';
+    updateDashboardStatus();
+    log('OK',{createdChannel:channel.id,connectUri:channel.connectUri,reason});
+
+    const topic=`v2.users.${currentUser.id}.conversations`;
+    await api(`/api/v2/notifications/channels/${channel.id}/subscriptions`,{
+      method:'PUT',
+      body:JSON.stringify([{id:topic}])
+    });
+    log('OK',`Subscribed to ${topic}`);
+
+    const socket=new WebSocket(channel.connectUri);
+    notifySocket=socket;
+
+    socket.onopen=()=>{
+      if(notifySocket!==socket) return;
+      reconnectAttempt=0;
+      setMonitorStatus('Running');
+      log('OK','Notification WebSocket connected.');
+      addAgentMsg('CSK System','Monitor running. Waiting for assigned/connected chats.','system');
+      recoverPublishedActiveInteractions('post-auth-subscription')
+        .catch(e=>log('WARN',{activeInteractionRecoveryUnhandled:true,error:e.message}));
+    };
+
+    socket.onerror=()=>{
+      if(notifySocket!==socket) return;
+      log('ERROR','Notification WebSocket error. Check token, permissions, and network.');
+    };
+
+    socket.onclose=(e)=>{
+      if(notifySocket===socket) notifySocket=null;
+      const expected=intentionalSocketClose || manualStopRequested;
+      log('WARN',`Notification WebSocket closed. code=${e.code} reason=${e.reason||'-'} expected=${expected}`);
+      if(manualStopRequested){
+        setMonitorStatus('Stopped manually');
+        return;
+      }
+      if(expected) return;
+      scheduleMonitorReconnect('websocket-close');
+    };
+
+    socket.onmessage=(event)=>{
+      let msg;
+      try{msg=JSON.parse(event.data)}catch(e){msg=event.data}
+      const isHeartbeat=msg && msg.topicName==='channel.metadata' && msg.eventBody && msg.eventBody.message==='WebSocket Heartbeat';
+      if($('adminVerbose').checked && !isHeartbeat) log('INFO',msg);
+      handleNotification(msg);
+    };
+
+    return true;
+  })();
+
+  try{
+    return await monitorStartPromise;
+  }catch(e){
+    const isWaiting=/OAuth\/MFA recovery started/i.test(e.message||'');
+    if(!isWaiting){
+      log('ERROR',{monitorStartFailed:true,reason,error:e.message,status:e.status||0});
+      scheduleMonitorReconnect('start-failed');
+    }
+    throw e;
+  }finally{
+    monitorStartPromise=null;
+  }
+}
+
+async function stopMonitor(writeLog=true){
+  manualStopRequested=writeLog!==false;
+  clearReconnectTimer();
+  closeMonitorSocket();
+  setMonitorStatus(manualStopRequested ? 'Stopped manually' : 'Stopped');
+  if(writeLog) log('WARN','Monitor stopped manually.');
+}
+
+async function ensureMonitorHealthy(reason){
+  if(manualStopRequested) return;
+  if(socketIsOpen()){
+    if($('monitorStatus')?.textContent!=='Running') setMonitorStatus('Running');
+    return;
+  }
+  if(notifySocket && notifySocket.readyState===WebSocket.CONNECTING) return;
+  log('INFO',{monitorHealthRecovery:true,reason,socketState:notifySocket?.readyState??'none'});
+  try{
+    await startMonitor({reason:'health-'+reason});
+  }catch(e){
+    if(!/OAuth\/MFA recovery started/i.test(e.message||'')){
+      log('WARN',{monitorHealthRecoveryFailed:true,reason,error:e.message});
+    }
+  }
+}
+
+function installMonitorLifecycleRecovery(){
+  if(monitorWatchdogTimer) return;
+  const recover=(reason)=>ensureMonitorHealthy(reason);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible') recover('visibility');
+  });
+  window.addEventListener('focus',()=>recover('focus'));
+  window.addEventListener('online',()=>recover('online'));
+  window.addEventListener('pageshow',()=>recover('pageshow'));
+  monitorWatchdogTimer=setInterval(()=>recover('watchdog'),MONITOR_WATCHDOG_MS);
+  log('INFO',{monitorLifecycleRecoveryInstalled:true,watchdogMs:MONITOR_WATCHDOG_MS});
+}
 const transferResolutionLocks=new Set();
 function handleNotification(msg){
   const body=msg.eventBody||msg.body||msg; if(!body||typeof body!=='object')return;

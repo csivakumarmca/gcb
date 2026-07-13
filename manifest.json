@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.63-prospects-optional-disconnect",
+  "version": "v1.7.2.64-chatmonitor-auth-recovery",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -38,7 +38,8 @@
     "v1.7.2.60 prevents Hold Summary API storms by using a single active refresh, caching message details, reading full/current-session messages once, stopping immediately on HTTP 429, and removing full transcript reloads from timer storage/broadcast events. It also stops timer/title blinking immediately when Resume starts or the hold record is cleared. ChatMonitor send/transfer logic is unchanged.",
     "v1.7.2.61 restores Hold Summary count synchronization after the v1.7.2.60 rate-limit optimization. A single debounced cached refresh runs after HOLD/RESUME timer events become quiet, and newer local attempt/count/time values are preserved when the Genesys transcript is temporarily delayed. ChatMonitor greeting/transfer logic is unchanged.",
     "v1.7.2.62 fixes Prospects Submit validation by reading the canonical Agent Script URL parameters agentParticipantId and agentCommunicationId. Legacy participantId and communicationId remain as fallback aliases. No Hold/Resume or ChatMonitor logic was changed.",
-    "v1.7.2.63 adds Data Table-controlled optional chat disconnect after successful Prospects submission. AFT_GCB_DisconnectAfterProspectsSubmit=false applies wrap-up and saves Prospects data only; true performs the same steps and then disconnects the current agent messaging communication. ChatMonitor and Index participant-config validation now expect 43 required GCB attributes. ChatMonitor greeting/transfer logic is unchanged."
+    "v1.7.2.63 adds Data Table-controlled optional chat disconnect after successful Prospects submission. AFT_GCB_DisconnectAfterProspectsSubmit=false applies wrap-up and saves Prospects data only; true performs the same steps and then disconnects the current agent messaging communication. ChatMonitor and Index participant-config validation now expect 43 required GCB attributes. ChatMonitor greeting/transfer logic is unchanged.",
+    "v1.7.2.64 is a technical-only ChatMonitor reliability patch. It adds coordinated OAuth/MFA recovery between browser tabs without storing access tokens in localStorage, validates OAuth during monitor startup, automatically recreates the notification channel and WebSocket after unexpected closure/long idle/network resume, adds visibility/focus/online/pageshow/watchdog recovery, and preserves manual stop behavior. No joined/greeting, transfer, language, duplicate-control, Hold/Resume, or Prospects business logic was changed."
   ],
   "fileMetadata": {
     "author": "Sivakumar Chandrahasu",

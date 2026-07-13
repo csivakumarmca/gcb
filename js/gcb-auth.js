@@ -3,7 +3,7 @@
  * Purpose: Shared OAuth/PKCE helper for GCB pages.
  *          Stores and refreshes browser-side auth state used by direct pages and router fallback.
  */
-/* GCB Shared OAuth / MFA Recovery v1.0.2-refresh-safe */
+/* GCB Shared OAuth / MFA Recovery v1.1.0-coordinated */
 (function (global) {
   "use strict";
 
@@ -15,6 +15,12 @@
   const DEFAULT_REGION = "mypurecloud.ie";
   const STORAGE_PKCE_VERIFIER = "pkce_code_verifier";
   const STORAGE_PKCE_STATE = "pkce_oauth_state";
+  const AUTH_LOCK_KEY = "AFT_GCB_AUTH_RECOVERY_LOCK_V1";
+  const AUTH_EVENT_KEY = "AFT_GCB_AUTH_RECOVERY_EVENT_V1";
+  const AUTH_CHANNEL_NAME = "AFT_GCB_AUTH_RECOVERY_V1";
+  const AUTH_LOCK_TTL_MS = 120000;
+  const AUTH_WAIT_TIMEOUT_MS = 45000;
+  const TAB_ID_KEY = "AFT_GCB_AUTH_TAB_ID";
 
   function getClientId() {
     const value = C.getParam("clientId") || sessionStorage.getItem(STORAGE_CLIENT_ID) || DEFAULT_CLIENT_ID;
@@ -67,6 +73,119 @@
     } catch (_) {}
   }
 
+  function getTabId() {
+    let value = "";
+    try {
+      value = sessionStorage.getItem(TAB_ID_KEY) || "";
+      if (!value) {
+        value = "tab-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+        sessionStorage.setItem(TAB_ID_KEY, value);
+      }
+    } catch (_) {
+      value = "tab-" + Math.random().toString(36).slice(2, 10);
+    }
+    return value;
+  }
+
+  function readAuthLock() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(AUTH_LOCK_KEY) || "null");
+      if (!parsed || !parsed.owner || !parsed.createdAt) return null;
+      if (Date.now() - Number(parsed.createdAt) > AUTH_LOCK_TTL_MS) {
+        localStorage.removeItem(AUTH_LOCK_KEY);
+        return null;
+      }
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function acquireAuthLock() {
+    const tabId = getTabId();
+    const existing = readAuthLock();
+    if (existing && existing.owner !== tabId) return false;
+    try {
+      localStorage.setItem(AUTH_LOCK_KEY, JSON.stringify({
+        owner: tabId,
+        createdAt: Date.now()
+      }));
+      const confirmed = readAuthLock();
+      return !!confirmed && confirmed.owner === tabId;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function releaseAuthLock() {
+    try {
+      const existing = readAuthLock();
+      if (!existing || existing.owner === getTabId()) localStorage.removeItem(AUTH_LOCK_KEY);
+    } catch (_) {}
+  }
+
+  function publishAuthEvent(type, detail) {
+    const event = {
+      type: String(type || ""),
+      owner: getTabId(),
+      at: Date.now(),
+      detail: detail || {}
+    };
+    try {
+      if ("BroadcastChannel" in global) {
+        const channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+        channel.postMessage(event);
+        channel.close();
+      }
+    } catch (_) {}
+    try {
+      localStorage.setItem(AUTH_EVENT_KEY, JSON.stringify(event));
+      localStorage.removeItem(AUTH_EVENT_KEY);
+    } catch (_) {}
+  }
+
+  function waitForAuthCompletion(timeoutMs) {
+    const waitMs = Number(timeoutMs || AUTH_WAIT_TIMEOUT_MS);
+    return new Promise(function (resolve) {
+      let finished = false;
+      let channel = null;
+      let timer = null;
+
+      function finish(value) {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        if (channel) {
+          try { channel.close(); } catch (_) {}
+        }
+        global.removeEventListener("storage", onStorage);
+        resolve(!!value);
+      }
+
+      function inspect(eventValue) {
+        const event = eventValue && typeof eventValue === "object" ? eventValue : {};
+        if (event.owner === getTabId()) return;
+        if (event.type === "AUTH_COMPLETED") finish(true);
+        if (event.type === "AUTH_FAILED") finish(false);
+      }
+
+      function onStorage(event) {
+        if (event.key !== AUTH_EVENT_KEY || !event.newValue) return;
+        try { inspect(JSON.parse(event.newValue)); } catch (_) {}
+      }
+
+      try {
+        if ("BroadcastChannel" in global) {
+          channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+          channel.onmessage = function (event) { inspect(event.data); };
+        }
+      } catch (_) {}
+
+      global.addEventListener("storage", onStorage);
+      timer = setTimeout(function () { finish(false); }, waitMs);
+    });
+  }
+
   function base64UrlEncode(arrayBuffer) {
     let str = "";
     const bytes = new Uint8Array(arrayBuffer);
@@ -90,6 +209,25 @@
     options = options || {};
     const clientId = getClientId();
     if (!clientId) throw new Error("clientId is required for Genesys OAuth login.");
+
+    if (!options.skipCoordination) {
+      const existingLock = readAuthLock();
+      if (existingLock && existingLock.owner !== getTabId()) {
+        publishAuthEvent("AUTH_WAITING", { waitingTab: getTabId() });
+        await waitForAuthCompletion(options.waitTimeoutMs || AUTH_WAIT_TIMEOUT_MS);
+        const tokenAfterWait = getAccessToken();
+        if (tokenAfterWait) return tokenAfterWait;
+      }
+    }
+
+    if (!acquireAuthLock()) {
+      await waitForAuthCompletion(options.waitTimeoutMs || AUTH_WAIT_TIMEOUT_MS);
+      const tokenAfterLockWait = getAccessToken();
+      if (tokenAfterLockWait) return tokenAfterLockWait;
+      if (!acquireAuthLock()) throw new Error("OAuth recovery is already running in another GCB tab.");
+    }
+
+    publishAuthEvent("AUTH_STARTED", { restoreUrl: options.restoreUrl || global.location.href });
 
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
@@ -158,11 +296,15 @@
       // A refreshed/stale authorization code can be ignored when another GCB frame already obtained a token.
       const recoveredToken = getAccessToken();
       if (recoveredToken) return recoveredToken;
+      releaseAuthLock();
+      publishAuthEvent("AUTH_FAILED", { reason: "token_request_failed", status: response.status });
       throw new Error("Token request failed: " + JSON.stringify(result));
     }
 
     sessionStorage.setItem("gc_access_token", result.access_token || "");
     sessionStorage.setItem("gc_token_expires_at", String(Date.now() + ((result.expires_in || 3600) * 1000)));
+    releaseAuthLock();
+    publishAuthEvent("AUTH_COMPLETED", { region: getRegion() });
     sessionStorage.removeItem(STORAGE_PKCE_VERIFIER);
     sessionStorage.removeItem(STORAGE_PKCE_STATE);
     if (state) sessionStorage.removeItem(STORAGE_PKCE_VERIFIER + ":" + state);
@@ -185,10 +327,28 @@
     return true;
   }
 
-  async function ensureToken() {
+  async function ensureToken(options) {
+    options = options || {};
     const token = getAccessToken();
     if (token) return token;
-    await startPKCELogin({ restoreUrl: global.location.href });
+
+    const existingLock = readAuthLock();
+    if (existingLock && existingLock.owner !== getTabId()) {
+      publishAuthEvent("AUTH_WAITING", { waitingTab: getTabId() });
+      await waitForAuthCompletion(options.waitTimeoutMs || AUTH_WAIT_TIMEOUT_MS);
+      const tokenAfterWait = getAccessToken();
+      if (tokenAfterWait) return tokenAfterWait;
+      // Each browser tab keeps its own session token. After another tab completes MFA,
+      // this tab performs its own PKCE round-trip; the existing Genesys SSO session
+      // normally completes without another MFA prompt.
+      await startPKCELogin({
+        restoreUrl: options.restoreUrl || global.location.href,
+        skipCoordination: true
+      });
+      return "";
+    }
+
+    await startPKCELogin({ restoreUrl: options.restoreUrl || global.location.href });
     return "";
   }
 
@@ -213,6 +373,10 @@
     handleOAuthCallback,
     handleOAuthRedirectIfPresent,
     ensureToken,
+    waitForAuthCompletion,
+    readAuthLock,
+    releaseAuthLock,
+    publishAuthEvent,
     isAuthError
   };
 })(window);
