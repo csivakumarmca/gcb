@@ -262,3 +262,23 @@ Protected business logic not changed:
 - Duplicate-control and participant-data send keys
 - Hold/Resume
 - Prospects
+
+
+## v1.7.2.65-agent-script-monitor-wake
+
+- Added `monitorwake.html` for a hidden Agent Script Web Page.
+- Publishes canonical runtime IDs and a monitor wake request.
+- Does not send customer messages and does not handle OAuth tokens.
+- ChatMonitor remains the only sender.
+- Uses BroadcastChannel with localStorage-event fallback.
+- Retains the latest wake briefly for Client App resume timing.
+- `forceStart=true` restarts a stale or manually stopped monitor on interaction page load.
+- Added visible `Restart Monitor` fallback.
+- Added `simulateUnexpectedMonitorStop()` for technical testing.
+- Index diagnostic display now prefers canonical Agent Script IDs.
+- ChatMonitor UI: `v1.2.24`
+- Cache version: `172265`
+
+Recommended hidden URL:
+
+`<GCB_ROOT>/monitorwake.html?v=172265&conversationId=<value>&agentCommunicationId=<value>&agentParticipantId=<value>&customerCommunicationId=<value>&customerParticipantId=<value>&agentName=<value>&langTag=<value>&source=AgentScript&forceStart=true`

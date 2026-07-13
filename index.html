@@ -104,7 +104,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.64-chatmonitor-auth-recovery";
+      const ROUTER_VERSION = "v1.7.2.65-agent-script-monitor-wake";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -505,13 +505,16 @@
           const configMissing = REQUIRED_GCB_ATTRIBUTES.length - configOk;
           const agentState = C.safeString(agentCommunication && agentCommunication.state).toLowerCase();
           const customerState = C.safeString(customerCommunication && customerCommunication.state).toLowerCase();
+          const runtime = getRuntimeParameters();
+          const runtimeAgentCommunicationId = C.safeString(runtime.agentCommunicationId);
+          const resolvedAgentCommunicationId = C.safeString(agentCommunication && agentCommunication.id);
           interactionSupportContext = {
             loaded: true,
             conversationStatus: (agentState === "connected" && customerState === "connected") ? "Connected" : (conversation && conversation.endTime ? "Disconnected" : "Active / awaiting connected leg"),
             customerSessionId: resolveCustomerSession(customerParticipant, customerCommunication),
-            agentParticipantId: C.safeString(agentParticipant && agentParticipant.id),
-            agentCommunicationId: C.safeString(agentCommunication && agentCommunication.id),
-            communicationState: C.safeString(agentCommunication && agentCommunication.state) || "Missing",
+            agentParticipantId: C.safeString(runtime.agentParticipantId) || C.safeString(agentParticipant && agentParticipant.id),
+            agentCommunicationId: runtimeAgentCommunicationId || resolvedAgentCommunicationId,
+            communicationState: C.safeString(agentCommunication && agentCommunication.state) || (runtimeAgentCommunicationId ? "Provided by Agent Script" : "Missing"),
             participantConfigSummary: configOk + "/" + REQUIRED_GCB_ATTRIBUTES.length + " OK" + (configMissing ? " - Missing: " + configMissing : "")
           };
           debugLog("INFO", "INDEX_INTERACTION_CONTEXT_READY", "conversationId=" + CURRENT_CONVERSATION_ID + " | agentCommunicationId=" + interactionSupportContext.agentCommunicationId + " | customerSessionId=" + interactionSupportContext.customerSessionId);

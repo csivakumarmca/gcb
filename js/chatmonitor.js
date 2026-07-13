@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.23';
+const APP_VERSION = 'v1.2.24';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -40,6 +40,12 @@ let monitorStartPromise = null;
 let monitorWatchdogTimer = null;
 const MONITOR_RECONNECT_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
 const MONITOR_WATCHDOG_MS = 45000;
+const MONITOR_WAKE_CHANNEL = 'AFT_GCB_MONITOR_WAKE_V1';
+const MONITOR_WAKE_EVENT_KEY = 'AFT_GCB_MONITOR_WAKE_EVENT_V1';
+const MONITOR_WAKE_LAST_KEY = 'AFT_GCB_MONITOR_WAKE_LAST_V1';
+const MONITOR_WAKE_MAX_AGE_MS = 10 * 60 * 1000;
+const processedWakeRequests = new Set();
+let monitorWakeChannel = null;
 
 const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'HOLD', name:'AFT_GCB_HoldMessageText', required:true},
@@ -404,6 +410,7 @@ async function init(){
   refreshTables();
   updateViewAccess({roleNames:[]});
   installMonitorLifecycleRecovery();
+  installMonitorWakeListener();
 
   if(!$('clientId').value.trim()){
     setMonitorStatus('Missing clientId');
@@ -558,8 +565,21 @@ async function recoverPublishedActiveInteractions(reason='post-mfa-startup'){
 }
 
 function setMonitorStatus(value){
+  const text=String(value||'');
   const el=$('monitorStatus');
-  if(el) el.textContent=value;
+  if(el) el.textContent=text;
+  const notice=$('monitorRecoveryNotice');
+  const restart=$('restartMonitorButton');
+  const failed=/Recovery failed|Stopped manually|Waiting for OAuth \/ MFA/i.test(text);
+  if(notice){
+    notice.style.display=failed?'block':'none';
+    notice.textContent=/Stopped manually/i.test(text)
+      ? 'Automatic greeting monitor is stopped. It will restart when a new Agent Script wake request is received, or click Restart Monitor.'
+      : /Waiting for OAuth \/ MFA/i.test(text)
+        ? 'Authentication is required. Complete OAuth/MFA; the monitor will restart automatically.'
+        : 'Automatic greeting monitor is not running. Click Restart Monitor or send the approved greeting manually for any already-arrived chat.';
+  }
+  if(restart) restart.style.display=failed?'inline-block':'none';
   updateDashboardStatus();
 }
 
@@ -733,6 +753,30 @@ async function stopMonitor(writeLog=true){
   if(writeLog) log('WARN','Monitor stopped manually.');
 }
 
+async function restartMonitorFromUi(){
+  manualStopRequested=false;
+  reconnectAttempt=0;
+  clearReconnectTimer();
+  setMonitorStatus('Starting');
+  log('INFO',{manualRestartRequested:true,source:'ui'});
+  try{
+    await startMonitor({reason:'ui-restart'});
+  }catch(e){
+    setMonitorStatus('Recovery failed');
+    log('ERROR',{manualRestartFailed:true,error:e.message});
+  }
+}
+
+async function simulateUnexpectedMonitorStop(){
+  manualStopRequested=false;
+  intentionalSocketClose=false;
+  const socket=notifySocket;
+  notifySocket=null;
+  try{ if(socket) socket.close(); }catch(e){}
+  setMonitorStatus('Stopped');
+  log('WARN',{simulatedUnexpectedMonitorStop:true});
+}
+
 async function ensureMonitorHealthy(reason){
   if(manualStopRequested) return;
   if(socketIsOpen()){
@@ -748,6 +792,113 @@ async function ensureMonitorHealthy(reason){
       log('WARN',{monitorHealthRecoveryFailed:true,reason,error:e.message});
     }
   }
+}
+
+function isWakeRequestFresh(request){
+  const created=Number(request?.createdAtMs||new Date(request?.createdAt||0).getTime()||0);
+  return !!created && Date.now()-created>=0 && Date.now()-created<=MONITOR_WAKE_MAX_AGE_MS;
+}
+
+async function recoverWakeConversation(request, reason){
+  if(!request?.conversationId) return;
+  try{
+    const snapshot=await getConversationSnapshot(request.conversationId);
+    const participants=snapshot?.participants||[];
+    const agent=findCurrentAgentParticipant(participants);
+    const comm=agent?getAgentCommunication(agent):{};
+    const info=agent?getAgentState(agent,comm):{state:'',note:''};
+    log('INFO',{
+      monitorWakeConversationCheck:true,
+      reason,
+      conversationId:request.conversationId,
+      suppliedAgentCommunicationId:request.agentCommunicationId||'',
+      resolvedAgentCommunicationId:comm?.id||'',
+      communicationState:comm?.state||'',
+      connected:info.state==='JOINED / CONNECTED'
+    });
+    if(agent && comm?.id && info.state==='JOINED / CONNECTED'){
+      processConversationBody(snapshot,'agent-script-wake');
+    }
+  }catch(e){
+    log('WARN',{monitorWakeConversationRecoveryFailed:true,reason,conversationId:request.conversationId,error:e.message});
+  }
+}
+
+async function handleMonitorWakeRequest(request, source){
+  if(!request || request.type!=='GCB_MONITOR_WAKE_REQUEST') return;
+  if(!isWakeRequestFresh(request)) return;
+  const requestId=String(request.requestId||'');
+  if(requestId && processedWakeRequests.has(requestId)) return;
+  if(requestId){
+    processedWakeRequests.add(requestId);
+    if(processedWakeRequests.size>100){
+      const first=processedWakeRequests.values().next().value;
+      processedWakeRequests.delete(first);
+    }
+  }
+
+  log('INFO',{
+    monitorWakeRequestReceived:true,
+    source,
+    requestId,
+    conversationId:request.conversationId||'',
+    agentCommunicationId:request.agentCommunicationId||'',
+    forceStart:request.forceStart!==false,
+    currentStatus:$('monitorStatus')?.textContent||'',
+    socketOpen:socketIsOpen()
+  });
+
+  if(request.forceStart!==false){
+    manualStopRequested=false;
+  }
+
+  try{
+    await ensureMonitorHealthy('agent-script-wake');
+    if(socketIsOpen()){
+      await recoverWakeConversation(request,'agent-script-wake');
+    }else{
+      setTimeout(()=>recoverWakeConversation(request,'agent-script-wake-delayed'),1500);
+    }
+  }catch(e){
+    setMonitorStatus('Recovery failed');
+    log('ERROR',{monitorWakeRequestFailed:true,source,requestId,error:e.message});
+  }
+}
+
+function installMonitorWakeListener(){
+  if(monitorWakeChannel) return;
+
+  try{
+    if('BroadcastChannel' in window){
+      monitorWakeChannel=new BroadcastChannel(MONITOR_WAKE_CHANNEL);
+      monitorWakeChannel.onmessage=event=>{
+        handleMonitorWakeRequest(event.data,'broadcast').catch(e=>log('ERROR',{monitorWakeUnhandled:true,error:e.message}));
+      };
+    }
+  }catch(e){
+    log('WARN',{monitorWakeBroadcastChannelFailed:true,error:e.message});
+  }
+
+  window.addEventListener('storage',event=>{
+    if(event.key!==MONITOR_WAKE_EVENT_KEY || !event.newValue) return;
+    try{
+      handleMonitorWakeRequest(JSON.parse(event.newValue),'storage').catch(e=>log('ERROR',{monitorWakeUnhandled:true,error:e.message}));
+    }catch(e){
+      log('WARN',{monitorWakeStorageParseFailed:true,error:e.message});
+    }
+  });
+
+  try{
+    const latestRaw=localStorage.getItem(MONITOR_WAKE_LAST_KEY);
+    const latest=latestRaw?JSON.parse(latestRaw):null;
+    if(latest && isWakeRequestFresh(latest)){
+      setTimeout(()=>handleMonitorWakeRequest(latest,'startup-last-wake'),250);
+    }
+  }catch(e){
+    log('WARN',{monitorWakeStartupReadFailed:true,error:e.message});
+  }
+
+  log('INFO',{monitorWakeListenerInstalled:true,channel:MONITOR_WAKE_CHANNEL});
 }
 
 function installMonitorLifecycleRecovery(){
