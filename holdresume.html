@@ -1083,7 +1083,7 @@
 
     function getMaxAttemptsAlertMessage() {
       const effectiveCount = getEffectiveHoldCount();
-      return "⚠️  ⛔ You have already reached the maximum allowed hold attempts. ⏱ (" + effectiveCount + " / " + CONFIG.maxHoldAttempts + ")";
+      return "⚠️  ⛔ " + CONFIG.holdMaxAttemptsAlertText + " ⏱ (" + effectiveCount + " / " + CONFIG.maxHoldAttempts + ")";
     }
 
     function showMaxAttemptsAlert() {
@@ -1136,32 +1136,92 @@
       customerCommunicationId: getParam("customerCommunicationId", getParam("communicationId", "")),
       agentCommunicationId: getParam("agentCommunicationId", ""),
       currentAgentInteractionStartTime: getParam("currentAgentInteractionStartTime", getParam("agentInteractionStartTime", "")),
-      isCustomerBasedHoldCalculation: getBoolParam("isCustomerBasedHoldCalculation", false),
-      holdMessageText: decodeMessageText(getParam("holdMessageText", getParam("messageTextHold", "Gen-Hold-32"))),
-      resumeMessageText: decodeMessageText(getParam("resumeMessageText", getParam("autoResumeMessageText", getParam("messageTextResume", "Gen-Resume-33")))),
+      isCustomerBasedHoldCalculation: false,
+      holdMessageText: "Gen-Hold-32",
+      resumeMessageText: "Gen-Resume-33",
       maxHoldAttempts: 3, // Script owns max-attempt enforcement; Hold Summary uses fixed display fallback 3.
-      maxHoldTime: getNumberParam("maxHoldTime", getNumberParam("holdTimerSeconds", 0)),
-      autoResumeEnabled: getBoolParam("autoResumeEnabled", false),
+      maxHoldTime: 180,
+      autoResumeEnabled: false,
       displayActionButton: getBoolParam("displayActionButton", true),
       externalAction: safeString(getParam("externalAction", getParam("action", "NONE"))).toUpperCase(),
       externalActionRequestId: safeString(getParam("requestId", "")),
       holdDetailsApiUrl: getParam("holdDetailsApiUrl", getParam("calculateHoldDetailsUrl", "")),
       debug: getBoolParam("debug", false),
       visibleDebug: getBoolParam("pageDebug", false) || getBoolParam("showPageDebug", false),
-      alertBlinkEnabled: getBoolParam("alertBlinkEnabled", true),
+      alertBlinkEnabled: true,
       alertSoundEnabled: false, // disabled in holdresume.html; holdtimer.html handles sound
-      alertBlinkDurationMs: Math.max(3000, getNumberParam("alertBlinkDurationMs", 15000)),
-      titleBlinkDurationMs: Math.max(3000, getNumberParam("titleBlinkDurationMs", 30000)),
-      alertSoundRepeatCount: Math.max(1, getNumberParam("alertSoundRepeatCount", 3)),
-      alertSoundDurationMs: Math.max(250, getNumberParam("alertSoundDurationMs", 650)),
-      alertSoundGapMs: Math.max(80, getNumberParam("alertSoundGapMs", 250)),
+      alertBlinkDurationMs: 15000,
+      titleBlinkDurationMs: 30000,
+      alertSoundRepeatCount: 3,
+      alertSoundDurationMs: 600,
+      alertSoundGapMs: 350,
       browserNotificationEnabled: false, // disabled in holdresume.html; holdtimer.html handles browser notification
       taskbarBlinkEnabled: false, // disabled in holdresume.html; holdtimer.html handles taskbar/browser attention
       requestNotificationPermissionOnHold: false, // disabled in holdresume.html
-      notificationAutoCloseMs: Math.max(3000, getNumberParam("notificationAutoCloseMs", 12000)),
+      notificationAutoCloseMs: 12000,
       autoRefreshDelayMs: Math.max(500, getNumberParam("autoRefreshDelayMs", 1200)),
-      source: getParam("source", "HoldResumePage")
+      source: getParam("source", "HoldResumePage"),
+      holdMaxTimeAlertText: "Maximum hold duration reached. Please resume the chat.",
+      holdMaxAttemptsAlertText: "You have reached the maximum allowed hold attempts.",
+      holdAlertTitle: "Hold Alert",
+      autoResumeSentText: "Auto resume sent."
     };
+
+    function attrText(attrs, name, fallback) {
+      const value = attrs && Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : undefined;
+      const text = safeString(value).trim();
+      return text || safeString(fallback);
+    }
+    function attrBool(attrs, name, fallback) {
+      const text = attrText(attrs, name, "").toLowerCase();
+      if (["true", "yes", "1", "y"].includes(text)) return true;
+      if (["false", "no", "0", "n"].includes(text)) return false;
+      return fallback;
+    }
+    function attrNumber(attrs, name, fallback, min) {
+      const value = Number(attrText(attrs, name, ""));
+      if (!Number.isFinite(value)) return fallback;
+      return typeof min === "number" ? Math.max(min, value) : value;
+    }
+    function mergeParticipantAttributesFromConversation(conversation) {
+      const output = {};
+      const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
+      participants.forEach(function (participant) {
+        if (participant && participant.attributes) Object.assign(output, participant.attributes);
+      });
+      participants.forEach(function (participant) {
+        const id = safeString(participant && participant.id);
+        if (id && (id === CONFIG.participantId || id === CONFIG.agentParticipantId) && participant.attributes) {
+          Object.assign(output, participant.attributes);
+        }
+      });
+      return output;
+    }
+    function applyParticipantConfig(attrs) {
+      if (!attrs || !Object.keys(attrs).length) return;
+      CONFIG.holdMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_HoldMessageText", CONFIG.holdMessageText));
+      CONFIG.resumeMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_ResumeMessageText", CONFIG.resumeMessageText));
+      CONFIG.maxHoldTime = attrNumber(attrs, "AFT_GCB_MaxHoldTimeSeconds", CONFIG.maxHoldTime, 1);
+      CONFIG.autoResumeEnabled = attrBool(attrs, "AFT_GCB_AutoResumeEnabled", CONFIG.autoResumeEnabled);
+      CONFIG.isCustomerBasedHoldCalculation = attrBool(attrs, "AFT_GCB_CustomerBasedHoldCalculation", CONFIG.isCustomerBasedHoldCalculation);
+      CONFIG.alertBlinkEnabled = attrBool(attrs, "AFT_GCB_AlertBlinkEnabled", CONFIG.alertBlinkEnabled);
+      CONFIG.alertBlinkDurationMs = attrNumber(attrs, "AFT_GCB_AlertBlinkDurationMs", CONFIG.alertBlinkDurationMs, 3000);
+      CONFIG.alertSoundRepeatCount = attrNumber(attrs, "AFT_GCB_AlertSoundRepeatCount", CONFIG.alertSoundRepeatCount, 1);
+      CONFIG.alertSoundDurationMs = attrNumber(attrs, "AFT_GCB_AlertSoundDurationMs", CONFIG.alertSoundDurationMs, 250);
+      CONFIG.alertSoundGapMs = attrNumber(attrs, "AFT_GCB_AlertSoundGapMs", CONFIG.alertSoundGapMs, 80);
+      CONFIG.titleBlinkDurationMs = attrNumber(attrs, "AFT_GCB_TitleBlinkDurationMs", CONFIG.titleBlinkDurationMs, 3000);
+      CONFIG.notificationAutoCloseMs = attrNumber(attrs, "AFT_GCB_NotificationAutoCloseMs", CONFIG.notificationAutoCloseMs, 3000);
+      CONFIG.holdMaxTimeAlertText = attrText(attrs, "AFT_GCB_HoldMaxTimeAlertText", CONFIG.holdMaxTimeAlertText);
+      CONFIG.holdMaxAttemptsAlertText = attrText(attrs, "AFT_GCB_HoldMaxAttemptsAlertText", CONFIG.holdMaxAttemptsAlertText);
+      CONFIG.holdAlertTitle = attrText(attrs, "AFT_GCB_HoldAlertTitle", CONFIG.holdAlertTitle);
+      CONFIG.autoResumeSentText = attrText(attrs, "AFT_GCB_AutoResumeSentText", CONFIG.autoResumeSentText);
+      addDebug("PARTICIPANT_CONFIG_APPLIED", "maxHoldAttempts=fixed-3 | maxHoldTime=" + CONFIG.maxHoldTime + " | autoResumeEnabled=" + CONFIG.autoResumeEnabled);
+    }
+    async function loadParticipantConfig(token) {
+      if (!token || !CONFIG.conversationId) return;
+      const conversation = await getMessageConversationDirect(token, CONFIG.conversationId);
+      applyParticipantConfig(mergeParticipantAttributesFromConversation(conversation));
+    }
 
     if (CONFIG.clientId) sessionStorage.setItem(STORAGE_CLIENT_ID, CONFIG.clientId);
     if (CONFIG.region) sessionStorage.setItem(STORAGE_REGION, CONFIG.region);
@@ -2446,7 +2506,7 @@
         return;
       }
 
-      showPersistentAlert("Maximum hold duration reached (" + CONFIG.maxHoldTime + " seconds). Auto resume is being sent...", "warning");
+      showPersistentAlert(CONFIG.holdMaxTimeAlertText + " (" + CONFIG.maxHoldTime + " seconds). Auto resume is being sent...", "warning");
       setStatus("Maximum hold duration reached. Auto resume is being sent...", "warning");
       addDebug("AUTO_RESUME_START", "maxHoldTime=" + CONFIG.maxHoldTime);
 
@@ -2467,7 +2527,7 @@
           startAttentionAlert(maxMessage, "error", "⛔ Max Hold Reached");
           setStatus("Maximum hold attempts reached. Further Hold is not allowed.", "error");
         } else {
-          const durationMessage = "Maximum hold duration reached (" + CONFIG.maxHoldTime + " seconds). Auto resume was sent automatically.";
+          const durationMessage = CONFIG.holdMaxTimeAlertText + " (" + CONFIG.maxHoldTime + " seconds). " + CONFIG.autoResumeSentText;
           startAttentionAlert(durationMessage, "warning", "⚠️ Auto Resume Sent");
           setStatus("Auto resume sent because maximum hold duration was reached.", "success");
         }
@@ -2759,6 +2819,15 @@
       }
 
       const hasToken = !!getAccessToken();
+      if (hasToken) {
+        try {
+          await loadParticipantConfig(getAccessToken());
+          setText("maxHoldAttempts", CONFIG.maxHoldAttempts);
+          setText("maxHoldAttemptsSub", CONFIG.maxHoldAttempts);
+        } catch (configError) {
+          addDebug("PARTICIPANT_CONFIG_LOAD_WARN", configError.message || String(configError));
+        }
+      }
       if (!hasToken && CONFIG.clientId) {
         isInitialSummaryLoading = false;
         setStatus("OAuth/MFA is required. Opening secure login...", "info");

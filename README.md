@@ -183,3 +183,18 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Hold Summary uses fixed fallback `3` for display/local protection.
 - Agent Script remains the source of truth for maximum hold-attempt enforcement.
 - No ChatMonitor greeting, transfer, duplicate-control, or send logic changed.
+
+## v1.7.2.59 participant configuration alignment
+
+The active HTML pages now read business configuration directly from participant attributes populated by Architect.
+
+### Hold Summary / Hold Timer
+- Read Hold/Resume message text, maximum hold time, auto-resume, hold-calculation mode, alert settings, and agent alert labels from `AFT_GCB_*` participant attributes.
+- URL business settings no longer override Data Table configuration.
+- Hold Summary maximum-attempt display remains fixed at `3`, as requested; the Agent Script owns the actual max-attempt validation.
+- Hold Timer compact layout now defaults to enabled.
+- Browser notification title/body and repeated alert sound now use Data Table values.
+
+### Prospects
+- Read Data Table IDs, multi-select mode, separators, and create-wrap-up behavior from participant attributes.
+- `AFT_GCB_CreateWrapupIfMissing=false` is now honored by the active page.

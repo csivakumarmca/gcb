@@ -350,7 +350,7 @@
   <script>
       const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const DEFAULT_GENESYS_REGION = "mypurecloud.ie";
-      const DEFAULT_APP_VERSION = "Prospects_v3.12";
+      const DEFAULT_APP_VERSION = "Prospects_v3.13";
       const STORAGE_CLIENT_ID = "gcb_clientId";
       const STORAGE_REGION = "gcb_region";
       const STORAGE_PROSPECTS_ORIGINAL_QUERY = "gcb_prospects_original_query";
@@ -386,19 +386,19 @@
       };
 
       const dataTableConfig = {
-        types: getParam("typeDataTableId") || "bc945049-40ea-4714-bd3f-4e552659a0e8",
-        prospects: getParam("prospectsDataTableId") || "85f5ecc1-0f16-423c-b91b-cea46bac40d7",
+        types: "bc945049-40ea-4714-bd3f-4e552659a0e8",
+        prospects: "85f5ecc1-0f16-423c-b91b-cea46bac40d7",
       };
 
       const wrapupConfig = {
-        createIfMissing: getBooleanParam("createWrapupIfMissing", true),
-        nameSeparator: getParam("wrapupNameSeparator") || " ⟹ ",
+        createIfMissing: false,
+        nameSeparator: " ⟹ ",
         pageSize: Number(getParam("wrapupPageSize") || 200),
       };
 
-      const CONTACT_REASON_SEPARATOR = getParam("contactReasonSeparator") || " ⇢ ";
-      const INTERACTION_OUTCOME_SEPARATOR = getParam("interactionOutcomeSeparator") || CONTACT_REASON_SEPARATOR;
-      const INTERACTION_OUTCOME_MULTI_SELECT = getBooleanParam("interactionOutcomeMultiSelect", false) || getBooleanParam("allowMultipleInteractionOutcome", false) || getBooleanParam("multiSelectOutcome", false);
+      let CONTACT_REASON_SEPARATOR = " ⇢ ";
+      let INTERACTION_OUTCOME_SEPARATOR = CONTACT_REASON_SEPARATOR;
+      let INTERACTION_OUTCOME_MULTI_SELECT = false;
 
       const dataTableColumnConfig = {
         typeOfInteraction: buildColumnAliases(
@@ -504,6 +504,48 @@
         return aliases;
       }
 
+      function participantAttrText(attrs, name, fallback) {
+        const value = attrs && Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : undefined;
+        const text = String(value == null ? "" : value).trim();
+        return text || String(fallback == null ? "" : fallback);
+      }
+      function participantAttrBool(attrs, name, fallback) {
+        const text = participantAttrText(attrs, name, "").toLowerCase();
+        if (["true", "yes", "1", "y"].includes(text)) return true;
+        if (["false", "no", "0", "n"].includes(text)) return false;
+        return fallback;
+      }
+      function mergeParticipantAttributes(conversation) {
+        const output = {};
+        const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
+        participants.forEach((participant) => {
+          if (participant && participant.attributes) Object.assign(output, participant.attributes);
+        });
+        participants.forEach((participant) => {
+          if (participant && participant.id === context.participantId && participant.attributes) {
+            Object.assign(output, participant.attributes);
+          }
+        });
+        return output;
+      }
+      async function loadParticipantConfiguration(token) {
+        if (!token || !context.conversationId) return;
+        const response = await fetch(`${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}`, {
+          method: "GET",
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        });
+        if (!response.ok) throw new Error(`Participant configuration fetch failed: ${response.status}`);
+        const conversation = await response.json();
+        const attrs = mergeParticipantAttributes(conversation);
+        dataTableConfig.types = participantAttrText(attrs, "AFT_GCB_ProspectsTypeDataTableId", dataTableConfig.types);
+        dataTableConfig.prospects = participantAttrText(attrs, "AFT_GCB_ProspectsMappingDataTableId", dataTableConfig.prospects);
+        wrapupConfig.createIfMissing = participantAttrBool(attrs, "AFT_GCB_CreateWrapupIfMissing", wrapupConfig.createIfMissing);
+        wrapupConfig.nameSeparator = participantAttrText(attrs, "AFT_GCB_WrapupNameSeparator", wrapupConfig.nameSeparator);
+        CONTACT_REASON_SEPARATOR = participantAttrText(attrs, "AFT_GCB_ContactReasonSeparator", CONTACT_REASON_SEPARATOR);
+        INTERACTION_OUTCOME_SEPARATOR = participantAttrText(attrs, "AFT_GCB_InteractionOutcomeSeparator", CONTACT_REASON_SEPARATOR);
+        INTERACTION_OUTCOME_MULTI_SELECT = participantAttrBool(attrs, "AFT_GCB_InteractionOutcomeMultiSelect", INTERACTION_OUTCOME_MULTI_SELECT);
+      }
+
       async function init() {
         if (getParam("clientId")) sessionStorage.setItem(STORAGE_CLIENT_ID, getParam("clientId"));
         if (getParam("region") || getParam("gcTargetEnv")) sessionStorage.setItem(STORAGE_REGION, getParam("region") || getParam("gcTargetEnv"));
@@ -552,6 +594,11 @@
           return;
         }
 
+        try {
+          await loadParticipantConfiguration(token);
+        } catch (configError) {
+          setRuntimeStatus("Participant configuration could not be refreshed. Safe defaults are being used: " + getErrorMessage(configError), true);
+        }
         await loadLiveData(token);
       }
 

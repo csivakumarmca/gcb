@@ -94,7 +94,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.25-direct-auth-fallback";
+      const VERSION = "v1.7.2.59-participant-config-alignment";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const ACTION_STATE_PREFIX = "GCB_HT_EXTERNAL_ACTION_";
@@ -124,29 +124,94 @@
         participantId:p("participantId", p("agentParticipantId", "")),
         agentParticipantId:p("agentParticipantId", p("participantId", "")),
         customerCommunicationId:p("customerCommunicationId", ""),
-        holdMessageText:decodeMessageText(p("holdMessageText", "Gen-Hold-32")),
-        resumeMessageText:decodeMessageText(p("resumeMessageText", "Gen-Resume-33")),
-        maxHoldAttempts:Math.max(1, n("maxHoldAttempts", 3)),
-        maxHoldTime:n("maxHoldTime", 30),
-        autoResumeEnabled:b("autoResumeEnabled", false),
+        holdMessageText:"Gen-Hold-32",
+        resumeMessageText:"Gen-Resume-33",
+        maxHoldAttempts:3,
+        maxHoldTime:180,
+        autoResumeEnabled:false,
         externalAction:String(p("externalAction", p("action", "NONE"))).toUpperCase(),
         requestId:p("requestId", ""),
-        // Alert behavior is owned by holdtimer.html and kept inside this file.
-        // Agent Script should pass only functional parameters such as message text, maxHoldTime, action and requestId.
+        // Business configuration is loaded from participant attributes populated by Architect.
         browserNotificationEnabled:true,
         alertSoundEnabled:true,
         taskbarBlinkEnabled:true,
         titleBlinkDurationMs:30000,
         alertBlinkEnabled:true,
         alertBlinkDurationMs:15000,
-        alertSoundRepeatCount:1,
+        alertSoundRepeatCount:3,
         alertSoundDurationMs:600,
-        alertSoundGapMs:250,
+        alertSoundGapMs:350,
         notificationAutoCloseMs:12000,
-        compact:b("compact", false),
+        holdMaxTimeAlertText:"Maximum hold duration reached. Please click Resume to continue the chat.",
+        holdMaxAttemptsAlertText:"You have reached the maximum allowed hold attempts.",
+        holdAlertTitle:"Hold Alert",
+        autoResumeSentText:"Auto resume sent.",
+        compact:b("compact", true),
         mode:String(p("mode", "")).toLowerCase()
       };
       const API_BASE = "https://api." + CONFIG.region;
+
+      function attrText(attrs, name, fallback){
+        const value = attrs && Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : undefined;
+        const text = safe(value).trim();
+        return text || safe(fallback);
+      }
+      function attrBool(attrs, name, fallback){
+        const text = attrText(attrs, name, "").toLowerCase();
+        if (["true","yes","1","y"].includes(text)) return true;
+        if (["false","no","0","n"].includes(text)) return false;
+        return fallback;
+      }
+      function attrNumber(attrs, name, fallback, min){
+        const num = Number(attrText(attrs, name, ""));
+        if (!Number.isFinite(num)) return fallback;
+        return typeof min === "number" ? Math.max(min, num) : num;
+      }
+      function mergeParticipantAttributes(conversation){
+        const output = {};
+        const participants = Array.isArray(conversation && conversation.participants) ? conversation.participants : [];
+        participants.forEach(participant => {
+          if (participant && participant.attributes) Object.assign(output, participant.attributes);
+        });
+        participants.forEach(participant => {
+          const id = safe(participant && participant.id);
+          if (id && (id === CONFIG.participantId || id === CONFIG.agentParticipantId) && participant.attributes) {
+            Object.assign(output, participant.attributes);
+          }
+        });
+        return output;
+      }
+      async function loadParticipantConfig(){
+        const token = getAccessToken();
+        if (!token || !CONFIG.conversationId) return false;
+        const response = await fetch(API_BASE + "/api/v2/conversations/messages/" + encodeURIComponent(CONFIG.conversationId), {
+          method:"GET",
+          headers:{ Authorization:"Bearer " + token, "Content-Type":"application/json" }
+        });
+        if (!response.ok) return false;
+        const conversation = await response.json();
+        const attrs = mergeParticipantAttributes(conversation);
+        CONFIG.holdMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_HoldMessageText", CONFIG.holdMessageText));
+        CONFIG.resumeMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_ResumeMessageText", CONFIG.resumeMessageText));
+        CONFIG.maxHoldTime = attrNumber(attrs, "AFT_GCB_MaxHoldTimeSeconds", CONFIG.maxHoldTime, 1);
+        CONFIG.autoResumeEnabled = attrBool(attrs, "AFT_GCB_AutoResumeEnabled", CONFIG.autoResumeEnabled);
+        CONFIG.alertBlinkEnabled = attrBool(attrs, "AFT_GCB_AlertBlinkEnabled", CONFIG.alertBlinkEnabled);
+        CONFIG.alertBlinkDurationMs = attrNumber(attrs, "AFT_GCB_AlertBlinkDurationMs", CONFIG.alertBlinkDurationMs, 3000);
+        CONFIG.alertSoundEnabled = attrBool(attrs, "AFT_GCB_AlertSoundEnabled", CONFIG.alertSoundEnabled);
+        CONFIG.alertSoundRepeatCount = attrNumber(attrs, "AFT_GCB_AlertSoundRepeatCount", CONFIG.alertSoundRepeatCount, 1);
+        CONFIG.alertSoundDurationMs = attrNumber(attrs, "AFT_GCB_AlertSoundDurationMs", CONFIG.alertSoundDurationMs, 250);
+        CONFIG.alertSoundGapMs = attrNumber(attrs, "AFT_GCB_AlertSoundGapMs", CONFIG.alertSoundGapMs, 80);
+        CONFIG.browserNotificationEnabled = attrBool(attrs, "AFT_GCB_BrowserNotificationEnabled", CONFIG.browserNotificationEnabled);
+        CONFIG.taskbarBlinkEnabled = attrBool(attrs, "AFT_GCB_TaskbarBlinkEnabled", CONFIG.taskbarBlinkEnabled);
+        CONFIG.titleBlinkDurationMs = attrNumber(attrs, "AFT_GCB_TitleBlinkDurationMs", CONFIG.titleBlinkDurationMs, 3000);
+        CONFIG.notificationAutoCloseMs = attrNumber(attrs, "AFT_GCB_NotificationAutoCloseMs", CONFIG.notificationAutoCloseMs, 3000);
+        CONFIG.holdMaxTimeAlertText = attrText(attrs, "AFT_GCB_HoldMaxTimeAlertText", CONFIG.holdMaxTimeAlertText);
+        CONFIG.holdMaxAttemptsAlertText = attrText(attrs, "AFT_GCB_HoldMaxAttemptsAlertText", CONFIG.holdMaxAttemptsAlertText);
+        CONFIG.holdAlertTitle = attrText(attrs, "AFT_GCB_HoldAlertTitle", CONFIG.holdAlertTitle);
+        CONFIG.autoResumeSentText = attrText(attrs, "AFT_GCB_AutoResumeSentText", CONFIG.autoResumeSentText);
+        return true;
+      }
+
       if (CONFIG.compact) document.body.classList.add("compact");
       if (CONFIG.mode === "micro") document.body.classList.add("compact", "micro");
 
@@ -367,9 +432,21 @@
         const key="GCB_HOLD_ALERT_SENT_" + sanitizeKey((record && record.key) || getCentralHoldKey());
         if (localStorage.getItem(key)) return;
         try { localStorage.setItem(key, new Date().toISOString()); } catch(_) {}
-        playBeepOnce(); blinkTitleOnce();
+        const repeats=Math.max(1, Number(CONFIG.alertSoundRepeatCount || 1));
+        const gap=Math.max(80, Number(CONFIG.alertSoundGapMs || 80));
+        for(let index=0; index<repeats; index+=1){
+          setTimeout(playBeepOnce, index * (Math.max(250, CONFIG.alertSoundDurationMs) + gap));
+        }
+        blinkTitleOnce();
         if (!CONFIG.browserNotificationEnabled || !("Notification" in window) || Notification.permission !== "granted") return;
-        try { const note = new Notification("SIVAKUMAR - RAKBANK", { body:"Maximum hold duration reached. Please click Resume to continue the chat.", tag:key, requireInteraction:false }); setTimeout(() => { try { note.close(); } catch(_){} }, CONFIG.notificationAutoCloseMs); } catch(_) {}
+        try {
+          const note = new Notification(CONFIG.holdAlertTitle, {
+            body:CONFIG.holdMaxTimeAlertText,
+            tag:key,
+            requireInteraction:false
+          });
+          setTimeout(() => { try { note.close(); } catch(_){} }, CONFIG.notificationAutoCloseMs);
+        } catch(_) {}
       }
       function render(){
         if (processingAction) {
@@ -398,11 +475,15 @@
         setCls(remaining <= 15 ? "warning" : "active");
         setText("icon","🎧"); setText("label","Customer on hold"); setText("sub","Remaining " + mmss(cappedRemaining) + " / Max " + mmss(max) + " · Manual Resume required"); setText("time", mmss(cappedRemaining));
       }
-      render();
-      setInterval(render, 1000);
-      window.addEventListener("storage", e => { if (e && e.key === GCB_ACTIVE_HOLDS_KEY) render(); });
-      try { if (typeof BroadcastChannel !== "undefined") { const ch=new BroadcastChannel(GCB_HOLD_CHANNEL); ch.onmessage=render; } } catch(_) {}
-      setTimeout(processExternalAction, 50);
+      async function initialize(){
+        try { await loadParticipantConfig(); } catch(_) {}
+        render();
+        setInterval(render, 1000);
+        window.addEventListener("storage", e => { if (e && e.key === GCB_ACTIVE_HOLDS_KEY) render(); });
+        try { if (typeof BroadcastChannel !== "undefined") { const ch=new BroadcastChannel(GCB_HOLD_CHANNEL); ch.onmessage=render; } } catch(_) {}
+        setTimeout(processExternalAction, 50);
+      }
+      initialize();
     })();
   </script>
 </body>
