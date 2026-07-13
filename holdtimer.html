@@ -94,7 +94,7 @@
   <script>
     (function(){
       "use strict";
-      const VERSION = "v1.7.2.59-participant-config-alignment";
+      const VERSION = "v1.7.2.60-hold-rate-limit-resume-fix";
       const GCB_ACTIVE_HOLDS_KEY = "GCB_ACTIVE_HOLDS_V1";
       const GCB_HOLD_CHANNEL = "GCB_HOLD_MONITOR";
       const ACTION_STATE_PREFIX = "GCB_HT_EXTERNAL_ACTION_";
@@ -359,6 +359,7 @@
         setActionState("IN_PROGRESS", "Started");
         try {
           if (CONFIG.externalAction === "RESUME") {
+            stopAllBlinking();
             const rec=findRecord();
             if (rec && rec.key) {
               const records=readRecords();
@@ -367,7 +368,10 @@
           }
           await sendMessage(CONFIG.externalAction);
           if (CONFIG.externalAction === "HOLD") saveHoldRecord();
-          else removeHoldRecord("EXTERNAL_RESUME");
+          else {
+            removeHoldRecord("EXTERNAL_RESUME");
+            stopAllBlinking();
+          }
           setActionState("DONE", "OK");
         } catch (err) {
           try { localStorage.removeItem(buildActionKey()); } catch(_) {}
@@ -417,6 +421,21 @@
         } catch(_) {}
       }
 
+      function stopAllBlinking(){
+        try {
+          if (titleBlinkInterval) {
+            clearInterval(titleBlinkInterval);
+            titleBlinkInterval = null;
+          }
+          document.title = ORIGINAL_TITLE;
+          const widget=document.getElementById("widget");
+          if (widget) {
+            widget.classList.remove("blinking");
+            delete widget.dataset.blinkKey;
+          }
+        } catch(_) {}
+      }
+
       function startWidgetBlinkUntilResume(record){
         if (!CONFIG.alertBlinkEnabled) return;
         try {
@@ -454,6 +473,7 @@
         }
         const record=findRecord();
         if (!record) {
+          stopAllBlinking();
           setCls("idle"); setText("icon","⏱️"); setText("label","No active hold"); setText("sub","Timer will appear when Hold is active."); setText("time","00:00"); setProgress(0); return;
         }
         const status=String(record.status || "");

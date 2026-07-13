@@ -1905,13 +1905,33 @@
      * 1) If holdDetailsApiUrl is configured, call that API.
      * 2) If not configured, calculate directly from Genesys conversation messages using the current OAuth token.
      ************************************************************/
+    let summaryRefreshPromise = null;
+    let summaryRefreshBlockedUntil = 0;
+    const messageDetailCache = new Map();
+
     async function refreshHoldSummary(showStatus) {
+      if (Date.now() < summaryRefreshBlockedUntil) {
+        addDebug("SUMMARY_REFRESH_THROTTLED", "Retry after rate-limit cooldown.");
+        return;
+      }
+      if (summaryRefreshPromise) {
+        addDebug("SUMMARY_REFRESH_JOINED", "Existing summary refresh is already running.");
+        return summaryRefreshPromise;
+      }
+      summaryRefreshPromise = (async function () {
+
       if (CONFIG.holdDetailsApiUrl) {
         await refreshHoldSummaryFromApi(showStatus);
         return;
       }
 
       await refreshHoldSummaryFromGenesys(showStatus);
+      })();
+      try {
+        return await summaryRefreshPromise;
+      } finally {
+        summaryRefreshPromise = null;
+      }
     }
 
     async function refreshHoldSummaryFromApi(showStatus) {
@@ -1981,8 +2001,11 @@
 
       addDebug("SUMMARY_REFS", "fullRefs=" + fullRefs.length + " | currentRefs=" + currentRefs.length);
 
-      const fullItems = await readTranscriptItemsDirect(token, CONFIG.conversationId, fullRefs, "FULL");
-      const currentItems = await readTranscriptItemsDirect(token, CONFIG.conversationId, currentRefs, "CURRENT_SESSION");
+      const allRefs = dedupeMessageRefs([].concat(fullRefs || [], currentRefs || []));
+      const allItems = await readTranscriptItemsDirect(token, CONFIG.conversationId, allRefs, "FULL_AND_CURRENT");
+      const currentIds = new Set((currentRefs || []).map(function (ref) { return ref.messageId; }));
+      const fullItems = allItems;
+      const currentItems = allItems.filter(function (item) { return currentIds.has(item.messageId); });
 
       const fullHold = calculateHoldDetailsFromTranscript(fullItems);
       const currentHold = calculateHoldDetailsFromTranscript(currentItems);
@@ -2092,12 +2115,24 @@
 
       for (const ref of refs || []) {
         try {
-          const detail = await getConversationMessageDirect(token, conversationId, ref.messageId);
+          let detail = messageDetailCache.get(ref.messageId);
+          if (!detail) {
+            detail = await getConversationMessageDirect(token, conversationId, ref.messageId);
+            messageDetailCache.set(ref.messageId, detail);
+          }
           const item = buildTranscriptItemFromMessage(detail, ref);
           if (item.messageText) items.push(item);
         } catch (err) {
           failed += 1;
-          addDebug("SUMMARY_MESSAGE_READ_FAILED", label + " | messageId=" + ref.messageId + " | " + (err.message || String(err)));
+          const text = err && err.message ? err.message : String(err);
+          addDebug("SUMMARY_MESSAGE_READ_FAILED", label + " | messageId=" + ref.messageId + " | " + text);
+          if (text.includes("HTTP 429")) {
+            const match = text.match(/Retry the request in \[(\d+)\] seconds/i);
+            const waitSeconds = match ? Math.max(2, Number(match[1])) : 15;
+            summaryRefreshBlockedUntil = Date.now() + (waitSeconds * 1000);
+            addDebug("SUMMARY_RATE_LIMIT_STOP", "Stopped remaining message-detail reads. retryAfterSeconds=" + waitSeconds);
+            break;
+          }
         }
       }
 
@@ -2372,12 +2407,7 @@
         summaryRefreshFromTimerHandle = setTimeout(async function () {
           try {
             applyVisibleTimerFromCentralRecord(source || "TIMER_ACTION");
-            if (getAccessToken()) {
-              await refreshHoldSummary(false);
-              setStatus("Ready.", "success");
-              hideStatusSoon();
-              addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION", safeString(source));
-            }
+            addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION_SKIPPED", safeString(source) + " | local timer state applied without full transcript reload.");
           } catch (err) {
             addDebug("SUMMARY_REFRESH_FROM_TIMER_ACTION_FAILED", err && err.message ? err.message : String(err));
           }
@@ -2542,7 +2572,7 @@
     async function refreshHoldSummaryAfterAction(action) {
       const expectedCount = getAttemptStartedCount();
       const localBeforeRefresh = normalizeSummary(latestSummary || loadCachedSummary() || buildInitialSummaryFromParams());
-      const maxTries = action === "RESUME" ? 6 : 4;
+      const maxTries = action === "RESUME" ? 2 : 2;
       let lastError = null;
 
       for (let attempt = 1; attempt <= maxTries; attempt++) {
@@ -2552,7 +2582,9 @@
           lastError = null;
         } catch (err) {
           lastError = err;
-          addDebug("SUMMARY_RETRY_FAILED", "action=" + action + " | attempt=" + attempt + " | " + (err.message || String(err)));
+          const retryText = err.message || String(err);
+          addDebug("SUMMARY_RETRY_FAILED", "action=" + action + " | attempt=" + attempt + " | " + retryText);
+          if (retryText.includes("HTTP 429")) break;
         }
 
         const visibleCount = getCurrentSessionCount();

@@ -198,3 +198,14 @@ The active HTML pages now read business configuration directly from participant 
 ### Prospects
 - Read Data Table IDs, multi-select mode, separators, and create-wrap-up behavior from participant attributes.
 - `AFT_GCB_CreateWrapupIfMissing=false` is now honored by the active page.
+
+## v1.7.2.60 hold rate-limit and resume fix
+
+- Prevents overlapping Hold Summary refreshes.
+- Caches message details during the page session.
+- Fetches full/current-session transcript details only once per unique message.
+- Stops the remaining message-detail loop immediately after HTTP 429 and honors a cooldown.
+- Storage/Broadcast timer events update local timer state only; they no longer trigger a full transcript reload.
+- After-action summary refresh retries reduced to two.
+- Resume immediately clears widget blinking and browser-title blinking.
+- No ChatMonitor greeting, transfer, or duplicate-control logic changed.
