@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.24';
+const APP_VERSION = 'v1.2.25';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -46,6 +46,86 @@ const MONITOR_WAKE_LAST_KEY = 'AFT_GCB_MONITOR_WAKE_LAST_V1';
 const MONITOR_WAKE_MAX_AGE_MS = 10 * 60 * 1000;
 const processedWakeRequests = new Set();
 let monitorWakeChannel = null;
+
+const MONITOR_LEADER_KEY = 'AFT_GCB_MONITOR_LEADER_V1';
+const MONITOR_HEARTBEAT_KEY = 'AFT_GCB_MONITOR_HEARTBEAT_V1';
+const MONITOR_LEASE_MS = 15000;
+const MONITOR_HEARTBEAT_MS = 5000;
+let monitorLeaderTimer = null;
+let monitorIsLeader = false;
+
+function readMonitorLeader(){
+  try{
+    const value=JSON.parse(localStorage.getItem(MONITOR_LEADER_KEY)||'null');
+    if(!value?.owner || !Number(value.expiresAt)) return null;
+    if(Date.now()>Number(value.expiresAt)){
+      localStorage.removeItem(MONITOR_LEADER_KEY);
+      return null;
+    }
+    return value;
+  }catch(_){ return null; }
+}
+
+function publishMonitorHeartbeat(){
+  if(!monitorIsLeader) return;
+  const value={
+    owner:MONITOR_INSTANCE_ID,
+    at:Date.now(),
+    expiresAt:Date.now()+MONITOR_LEASE_MS,
+    status:socketIsOpen()?'Running':'Starting',
+    source:new URLSearchParams(location.search||'').get('source')||'Unknown',
+    page:'chatmonitor.html'
+  };
+  try{
+    localStorage.setItem(MONITOR_LEADER_KEY,JSON.stringify(value));
+    localStorage.setItem(MONITOR_HEARTBEAT_KEY,JSON.stringify(value));
+  }catch(_){}
+}
+
+function acquireMonitorLeadership(reason){
+  const existing=readMonitorLeader();
+  if(existing && existing.owner!==MONITOR_INSTANCE_ID){
+    monitorIsLeader=false;
+    log('INFO',{monitorStandby:true,reason,leaderOwner:existing.owner,leaderStatus:existing.status||'',leaderSource:existing.source||''});
+    setMonitorStatus('Standby – another GCB monitor is running');
+    return false;
+  }
+  monitorIsLeader=true;
+  publishMonitorHeartbeat();
+  if(!monitorLeaderTimer){
+    monitorLeaderTimer=setInterval(publishMonitorHeartbeat,MONITOR_HEARTBEAT_MS);
+  }
+  log('INFO',{monitorLeadershipAcquired:true,reason,owner:MONITOR_INSTANCE_ID});
+  return true;
+}
+
+function releaseMonitorLeadership(reason){
+  if(monitorLeaderTimer){
+    clearInterval(monitorLeaderTimer);
+    monitorLeaderTimer=null;
+  }
+  try{
+    const current=readMonitorLeader();
+    if(!current || current.owner===MONITOR_INSTANCE_ID){
+      localStorage.removeItem(MONITOR_LEADER_KEY);
+      localStorage.removeItem(MONITOR_HEARTBEAT_KEY);
+    }
+  }catch(_){}
+  if(monitorIsLeader) log('INFO',{monitorLeadershipReleased:true,reason,owner:MONITOR_INSTANCE_ID});
+  monitorIsLeader=false;
+}
+
+function installMonitorLeaderRecovery(){
+  window.addEventListener('storage',event=>{
+    if(event.key!==MONITOR_LEADER_KEY) return;
+    const current=readMonitorLeader();
+    if(current && current.owner!==MONITOR_INSTANCE_ID) return;
+    if(!manualStopRequested && !socketIsOpen()){
+      setTimeout(()=>startMonitor({reason:'leader-available'}).catch(e=>log('WARN',{leaderRecoveryFailed:true,error:e.message})),250);
+    }
+  });
+  window.addEventListener('beforeunload',()=>releaseMonitorLeadership('beforeunload'));
+}
 
 const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'HOLD', name:'AFT_GCB_HoldMessageText', required:true},
@@ -410,6 +490,7 @@ async function init(){
   refreshTables();
   updateViewAccess({roleNames:[]});
   installMonitorLifecycleRecovery();
+  installMonitorLeaderRecovery();
   installMonitorWakeListener();
 
   if(!$('clientId').value.trim()){
@@ -532,6 +613,14 @@ async function getMe(){
   }
 }
 
+
+function isValidConversationId(value){
+  const text=String(value||'').trim();
+  if(!text) return false;
+  if(/^\[.*\]$/.test(text)) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text);
+}
+
 async function recoverPublishedActiveInteractions(reason='post-mfa-startup'){
   let contexts=[];
   try{
@@ -541,7 +630,7 @@ async function recoverPublishedActiveInteractions(reason='post-mfa-startup'){
   }catch(e){ log('WARN',{activeInteractionRecoveryReadFailed:true,reason,error:e.message}); return; }
   const nowMs=Date.now();
   const recent=contexts.filter(item=>{
-    if(!item?.conversationId)return false;
+    if(!isValidConversationId(item?.conversationId))return false;
     const age=nowMs-new Date(item.updatedAt||0).getTime();
     return Number.isFinite(age)&&age>=0&&age<=POST_MFA_RECOVERY_MAX_AGE_MS;
   });
@@ -659,6 +748,7 @@ function scheduleMonitorReconnect(reason){
 
 async function startMonitor(options={}){
   const reason=options.reason||'manual-start';
+  if(!acquireMonitorLeadership(reason)) return false;
   if(reason==='manual-start') manualStopRequested=false;
   if(manualStopRequested && reason!=='manual-start'){
     setMonitorStatus('Stopped manually');
@@ -697,6 +787,7 @@ async function startMonitor(options={}){
       if(notifySocket!==socket) return;
       reconnectAttempt=0;
       setMonitorStatus('Running');
+      publishMonitorHeartbeat();
       log('OK','Notification WebSocket connected.');
       addAgentMsg('CSK System','Monitor running. Waiting for assigned/connected chats.','system');
       recoverPublishedActiveInteractions('post-auth-subscription')
@@ -749,6 +840,7 @@ async function stopMonitor(writeLog=true){
   manualStopRequested=writeLog!==false;
   clearReconnectTimer();
   closeMonitorSocket();
+  if(manualStopRequested) releaseMonitorLeadership('manual-stop');
   setMonitorStatus(manualStopRequested ? 'Stopped manually' : 'Stopped');
   if(writeLog) log('WARN','Monitor stopped manually.');
 }

@@ -282,3 +282,24 @@ Protected business logic not changed:
 Recommended hidden URL:
 
 `<GCB_ROOT>/monitorwake.html?v=172265&conversationId=<value>&agentCommunicationId=<value>&agentParticipantId=<value>&customerCommunicationId=<value>&customerParticipantId=<value>&agentName=<value>&langTag=<value>&source=AgentScript&forceStart=true`
+
+
+## v1.7.2.66-hidden-monitor-autostart
+
+The hidden Agent Script `monitorwake.html` page now starts ChatMonitor automatically when the visible GCB Client App is not loaded.
+
+- Waits 4.5 seconds for an existing monitor heartbeat.
+- Routes the hidden page to `index.html?page=chatmonitor` when no monitor exists.
+- Uses the browser's existing Genesys SSO session for OAuth validation.
+- Uses a cross-tab leader lease so only one monitor owns the notification WebSocket.
+- A visible GCB Client App opened later stays in standby while the hidden monitor is active.
+- Filters placeholder values such as `[Interaction ID]`.
+
+Versions:
+- GCB: `v1.7.2.66-hidden-monitor-autostart`
+- ChatMonitor UI: `v1.2.25`
+- Cache: `172266`
+
+Recommended hidden URL:
+
+`<GCB_ROOT>/monitorwake.html?v=172266&conversationId=<value>&agentCommunicationId=<value>&agentParticipantId=<value>&customerCommunicationId=<value>&customerParticipantId=<value>&agentName=<value>&langTag=<value>&clientId=<OAuth client ID>&region=mypurecloud.ie&gcTargetEnv=prod-euw1&gcHostOrigin=https%3A%2F%2Fapps.mypurecloud.ie&usePopupAuth=false&source=AgentScript&forceStart=true`

@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.65-agent-script-monitor-wake",
+  "version": "v1.7.2.66-hidden-monitor-autostart",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -40,7 +40,8 @@
     "v1.7.2.62 fixes Prospects Submit validation by reading the canonical Agent Script URL parameters agentParticipantId and agentCommunicationId. Legacy participantId and communicationId remain as fallback aliases. No Hold/Resume or ChatMonitor logic was changed.",
     "v1.7.2.63 adds Data Table-controlled optional chat disconnect after successful Prospects submission. AFT_GCB_DisconnectAfterProspectsSubmit=false applies wrap-up and saves Prospects data only; true performs the same steps and then disconnects the current agent messaging communication. ChatMonitor and Index participant-config validation now expect 43 required GCB attributes. ChatMonitor greeting/transfer logic is unchanged.",
     "v1.7.2.64 is a technical-only ChatMonitor reliability patch. It adds coordinated OAuth/MFA recovery between browser tabs without storing access tokens in localStorage, validates OAuth during monitor startup, automatically recreates the notification channel and WebSocket after unexpected closure/long idle/network resume, adds visibility/focus/online/pageshow/watchdog recovery, and preserves manual stop behavior. No joined/greeting, transfer, language, duplicate-control, Hold/Resume, or Prospects business logic was changed.",
-    "v1.7.2.65 adds monitorwake.html for a hidden Agent Script Web Page. It publishes current interaction context and requests ChatMonitor recovery. ChatMonitor remains the only sender and retains existing OAuth, role/language/transfer and duplicate-control ownership. A visible Restart Monitor fallback is included. Index support display now prefers canonical Agent Script communication IDs."
+    "v1.7.2.65 adds monitorwake.html for a hidden Agent Script Web Page. It publishes current interaction context and requests ChatMonitor recovery. ChatMonitor remains the only sender and retains existing OAuth, role/language/transfer and duplicate-control ownership. A visible Restart Monitor fallback is included. Index support display now prefers canonical Agent Script communication IDs.",
+    "v1.7.2.66 allows monitorwake.html to become a hidden ChatMonitor host when no active monitor heartbeat exists. A cross-tab leader lease ensures only one ChatMonitor owns the Genesys notification WebSocket. A later-opened visible GCB Client App remains in standby until the hidden owner closes. Placeholder values such as [Interaction ID] are excluded from active-interaction recovery. No joined/greeting, transfer, supervisor, language, Hold/Resume, Prospects, or duplicate participant-data business rules were changed."
   ],
   "fileMetadata": {
     "author": "Sivakumar Chandrahasu",

@@ -19,6 +19,8 @@
   const WAKE_EVENT_KEY = "AFT_GCB_MONITOR_WAKE_EVENT_V1";
   const WAKE_LAST_KEY = "AFT_GCB_MONITOR_WAKE_LAST_V1";
   const CONTEXTS_KEY = "AFT_GCB_INTERACTION_CONTEXTS_V1";
+  const MONITOR_LEADER_KEY = "AFT_GCB_MONITOR_LEADER_V1";
+  const MONITOR_AUTOSTART_DELAY_MS = 4500;
   const params = new URLSearchParams(location.search || "");
 
   function value(name, legacyName){
@@ -45,7 +47,7 @@
     agentName: value("agentName"),
     language: value("langTag") || value("language") || "",
     forceStart: boolValue("forceStart", true),
-    version: value("version") || "MonitorWake_v1.0"
+    version: value("version") || "MonitorWake_v1.1"
   };
 
   function saveInteractionContext(){
@@ -94,10 +96,34 @@
     } catch (_) {}
   }
 
+  function hasActiveMonitor(){
+    try{
+      const leader=JSON.parse(localStorage.getItem(MONITOR_LEADER_KEY)||"null");
+      return !!leader?.owner && Number(leader.expiresAt||0)>Date.now();
+    }catch(_){ return false; }
+  }
+
+  function buildAutoStartUrl(){
+    const next=new URLSearchParams(params);
+    next.set("v","172266");
+    next.set("page","chatmonitor");
+    next.set("source","AgentScriptAutoStart");
+    next.set("routedFrom","monitorwake");
+    next.set("autoStarted","true");
+    next.delete("forceStart");
+    return "index.html?" + next.toString();
+  }
+
+  function ensureMonitorLoaded(){
+    if(hasActiveMonitor()) return;
+    location.replace(buildAutoStartUrl());
+  }
+
   saveInteractionContext();
   publish();
   setTimeout(publish, 1000);
   setTimeout(publish, 3000);
+  setTimeout(ensureMonitorLoaded, MONITOR_AUTOSTART_DELAY_MS);
 })();
 </script>
 </body>
