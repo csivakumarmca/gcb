@@ -176,3 +176,10 @@ Transfer leg resolver - v1.7.2.47-safe-ui-diagnostics
 - Summary now displays `Data Table Participant Config: x/42 OK`.
 - Added a cache-buster to `chatmonitor.js`.
 - No greeting, joined-message, transfer, duplicate-control, or send logic was changed.
+
+## v1.7.2.58 hold-attempt default fix
+
+- Hold Summary no longer reads `maxHoldAttempts` from the URL.
+- Hold Summary uses fixed fallback `3` for display/local protection.
+- Agent Script remains the source of truth for maximum hold-attempt enforcement.
+- No ChatMonitor greeting, transfer, duplicate-control, or send logic changed.

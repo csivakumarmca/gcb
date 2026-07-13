@@ -1,7 +1,7 @@
 {
   "projectShortName": "RAKBANK GCB",
   "projectFullName": "RAKBANK Genesys Context Bridge",
-  "version": "v1.7.2.57-participant-config-status-fix",
+  "version": "v1.7.2.58-hold-attempt-default-fix",
   "basePath": "https://static-web-ivr-dev.rakbanktst.ae/genesys/gcb/",
   "oauthRedirectPage": "index.html",
   "pages": {
@@ -32,7 +32,8 @@
     "v1.7.2.49 replaces the long Role list in Support View with the Agent Participant ID and current communication state, improving transfer troubleshooting without changing ChatMonitor send or transfer logic.",
     "v1.7.2.55 adds optional AFT_GCB_AgentTransferGreetingText and AFT_GCB_SupervisorTransferGreetingText attributes. Transfer greetings use these values when present and fall back to the existing initial Greeting text when missing. Joined-message text and duplicate-control behavior are unchanged.",
     "v1.7.2.56 uses language-specific customer-facing joined and greeting attributes, one common language-specific transfer greeting for agent/supervisor transfers, and common non-bilingual agent-screen hold labels.",
-    "v1.7.2.57 aligns ChatMonitor GCB Participant Config Status with the 42 actual Data Table participant attributes, removes four unrelated optional/runtime rows from that status table, updates the summary label, and adds a chatmonitor.js cache-buster. Message-send logic is unchanged."
+    "v1.7.2.57 aligns ChatMonitor GCB Participant Config Status with the 42 actual Data Table participant attributes, removes four unrelated optional/runtime rows from that status table, updates the summary label, and adds a chatmonitor.js cache-buster. Message-send logic is unchanged.",
+    "v1.7.2.58 removes maxHoldAttempts URL/participant override from Hold Summary and uses fixed fallback 3. Agent Script remains the owner of maximum hold-attempt enforcement. ChatMonitor greeting/transfer/send logic is unchanged."
   ],
   "fileMetadata": {
     "author": "Sivakumar Chandrahasu",

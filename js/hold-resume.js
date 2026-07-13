@@ -4,14 +4,14 @@
  *          Sends hold/resume messages, manages local hold records, and calculates hold status.
  */
 /************************************************************
-     * RAKBANK HOLD RESUME PAGE - v1.0.12
+     * RAKBANK HOLD RESUME PAGE - v1.0.13
      * Uses existing Genesys client-side send-message approach.
      * v1.0.12 release note:
      * - Browser notification/taskbar attention kept as optional best-effort alert.
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.0.12";
+    const HR_VERSION = "v1.0.13";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -436,7 +436,7 @@
       isCustomerBasedHoldCalculation: getBoolParam("isCustomerBasedHoldCalculation", false),
       holdMessageText: decodeMessageText(getParam("holdMessageText", getParam("messageTextHold", "Gen-Hold-32"))),
       resumeMessageText: decodeMessageText(getParam("resumeMessageText", getParam("autoResumeMessageText", getParam("messageTextResume", "Gen-Resume-33")))),
-      maxHoldAttempts: Math.max(1, getNumberParam("maxHoldAttempts", 3)),
+      maxHoldAttempts: 3, // Script owns max-attempt enforcement; Hold Summary uses fixed display fallback 3.
       maxHoldTime: getNumberParam("maxHoldTime", getNumberParam("holdTimerSeconds", 0)),
       holdDetailsApiUrl: getParam("holdDetailsApiUrl", getParam("calculateHoldDetailsUrl", "")),
       debug: getBoolParam("debug", false),
@@ -501,7 +501,6 @@
       if (!attrs || !Object.keys(attrs).length) return;
       CONFIG.holdMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_HoldMessageText", CONFIG.holdMessageText));
       CONFIG.resumeMessageText = decodeMessageText(attrText(attrs, "AFT_GCB_ResumeMessageText", CONFIG.resumeMessageText));
-      CONFIG.maxHoldAttempts = Math.max(1, attrNumber(attrs, "AFT_GCB_MaxHoldAttempts", CONFIG.maxHoldAttempts, 1));
       CONFIG.maxHoldTime = attrNumber(attrs, "AFT_GCB_MaxHoldTimeSeconds", CONFIG.maxHoldTime, 0);
       CONFIG.isCustomerBasedHoldCalculation = attrBool(attrs, "AFT_GCB_CustomerBasedHoldCalculation", CONFIG.isCustomerBasedHoldCalculation);
       CONFIG.alertBlinkEnabled = attrBool(attrs, "AFT_GCB_AlertBlinkEnabled", CONFIG.alertBlinkEnabled);

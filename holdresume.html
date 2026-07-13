@@ -709,7 +709,7 @@
      * - If permission is granted, notification can appear.
      * - If permission is denied/blocked, Hold/Resume continues and falls back to alert blink, title blink, and sound.
      ************************************************************/
-    const HR_VERSION = "v1.0.7-direct-auth-fallback";
+    const HR_VERSION = "v1.0.8-hold-attempt-default-fix";
 
     const ORIGINAL_DOCUMENT_TITLE = document.title;
     let attentionTitleInterval = null;
@@ -1139,7 +1139,7 @@
       isCustomerBasedHoldCalculation: getBoolParam("isCustomerBasedHoldCalculation", false),
       holdMessageText: decodeMessageText(getParam("holdMessageText", getParam("messageTextHold", "Gen-Hold-32"))),
       resumeMessageText: decodeMessageText(getParam("resumeMessageText", getParam("autoResumeMessageText", getParam("messageTextResume", "Gen-Resume-33")))),
-      maxHoldAttempts: Math.max(1, getNumberParam("maxHoldAttempts", 3)),
+      maxHoldAttempts: 3, // Script owns max-attempt enforcement; Hold Summary uses fixed display fallback 3.
       maxHoldTime: getNumberParam("maxHoldTime", getNumberParam("holdTimerSeconds", 0)),
       autoResumeEnabled: getBoolParam("autoResumeEnabled", false),
       displayActionButton: getBoolParam("displayActionButton", true),
