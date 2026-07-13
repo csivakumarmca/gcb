@@ -225,3 +225,13 @@ The active HTML pages now read business configuration directly from participant 
 - Submit validation now reports the canonical parameter names.
 - Prospects page version updated to `Prospects_v3.14`.
 - No Hold/Resume, ChatMonitor greeting, transfer, or duplicate-control logic changed.
+
+## v1.7.2.63 Prospects optional disconnect
+
+- New participant attribute: `AFT_GCB_DisconnectAfterProspectsSubmit`.
+- `false`: find/create the wrap-up as configured, apply wrap-up, and save Prospects participant data; keep the chat connected.
+- `true`: complete all of the above successfully, then PATCH the current agent messaging communication with `{ "state": "disconnected" }`.
+- Disconnect is never attempted when wrap-up assignment or participant-data save fails.
+- ChatMonitor/Index Participant Config Status now expects `43/43` required GCB attributes.
+- Prospects page version: `Prospects_v3.15`; ChatMonitor UI: `v1.2.22`.
+- No ChatMonitor joined/greeting/transfer/duplicate-control logic changed.

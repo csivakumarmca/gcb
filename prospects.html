@@ -350,7 +350,7 @@
   <script>
       const DEFAULT_OAUTH_CLIENT_ID = "cc8cd8bf-0e14-4b14-9e4f-4849bc23ed00";
       const DEFAULT_GENESYS_REGION = "mypurecloud.ie";
-      const DEFAULT_APP_VERSION = "Prospects_v3.14";
+      const DEFAULT_APP_VERSION = "Prospects_v3.15";
       const STORAGE_CLIENT_ID = "gcb_clientId";
       const STORAGE_REGION = "gcb_region";
       const STORAGE_PROSPECTS_ORIGINAL_QUERY = "gcb_prospects_original_query";
@@ -394,6 +394,7 @@
 
       const wrapupConfig = {
         createIfMissing: false,
+        disconnectAfterSubmit: false,
         nameSeparator: " ⟹ ",
         pageSize: Number(getParam("wrapupPageSize") || 200),
       };
@@ -542,6 +543,7 @@
         dataTableConfig.types = participantAttrText(attrs, "AFT_GCB_ProspectsTypeDataTableId", dataTableConfig.types);
         dataTableConfig.prospects = participantAttrText(attrs, "AFT_GCB_ProspectsMappingDataTableId", dataTableConfig.prospects);
         wrapupConfig.createIfMissing = participantAttrBool(attrs, "AFT_GCB_CreateWrapupIfMissing", wrapupConfig.createIfMissing);
+        wrapupConfig.disconnectAfterSubmit = participantAttrBool(attrs, "AFT_GCB_DisconnectAfterProspectsSubmit", wrapupConfig.disconnectAfterSubmit);
         wrapupConfig.nameSeparator = participantAttrText(attrs, "AFT_GCB_WrapupNameSeparator", wrapupConfig.nameSeparator);
         CONTACT_REASON_SEPARATOR = participantAttrText(attrs, "AFT_GCB_ContactReasonSeparator", CONTACT_REASON_SEPARATOR);
         INTERACTION_OUTCOME_SEPARATOR = participantAttrText(attrs, "AFT_GCB_InteractionOutcomeSeparator", CONTACT_REASON_SEPARATOR);
@@ -665,6 +667,7 @@
           `wrapupCodeName: ${state.debugInfo.wrapupCodeName || "[none]"}`,
           `wrapupCodeId: ${state.debugInfo.wrapupCodeId || "[none]"}`,
           `wrapupCreated: ${state.debugInfo.wrapupCreated || "[none]"}`,
+          `disconnectAfterSubmit: ${wrapupConfig.disconnectAfterSubmit}`,
           `submitLog: ${state.debugInfo.submitLog || "[none]"}`,
         ].join("\n");
       }
@@ -1407,11 +1410,23 @@
           appendSubmitLog("PARTICIPANT_DATA_SAVED");
           await updateAssignDebugAttribute(token);
 
+          if (wrapupConfig.disconnectAfterSubmit) {
+            setRuntimeStatus("Prospects saved. Disconnecting current chat...");
+            appendSubmitLog("DISCONNECT_REQUESTED");
+            await disconnectCurrentMessageCommunication(token);
+            appendSubmitLog("COMMUNICATION_DISCONNECTED");
+          } else {
+            appendSubmitLog("DISCONNECT_SKIPPED_FLAG_FALSE");
+          }
+
           sessionStorage.setItem(submitKey, "true");
           saveDraft();
           renderDebugParameters();
-          setRuntimeStatus("Wrap-up assigned and Prospects submitted successfully.");
-          centralStatus("prospects", "success", "Wrap-up assigned and Prospects submitted successfully.");
+          const successMessage = wrapupConfig.disconnectAfterSubmit
+            ? "Wrap-up assigned, Prospects submitted, and chat disconnected successfully."
+            : "Wrap-up assigned and Prospects submitted successfully.";
+          setRuntimeStatus(successMessage);
+          centralStatus("prospects", "success", successMessage);
         } catch (error) {
           submitButton.disabled = false;
           appendSubmitLog(`ERROR::${getErrorMessage(error)}`);
@@ -1550,6 +1565,24 @@
         const text = await response.text();
         const payload = parseJson(text);
         if (!response.ok) throw new Error(payload.message || payload.error || `Wrap-up assignment failed: ${response.status}`);
+        return payload;
+      }
+
+      async function disconnectCurrentMessageCommunication(token) {
+        const url = `${API_BASE}/api/v2/conversations/messages/${encodeURIComponent(context.conversationId)}/participants/${encodeURIComponent(context.participantId)}/communications/${encodeURIComponent(context.communicationId)}`;
+        const response = await fetch(url, {
+          method: "PATCH",
+          headers: {
+            Authorization: "Bearer " + token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ state: "disconnected" }),
+        });
+        const text = await response.text();
+        const payload = parseJson(text);
+        if (!response.ok) {
+          throw new Error(payload.message || payload.error || `Chat disconnect failed: ${response.status}`);
+        }
         return payload;
       }
 
