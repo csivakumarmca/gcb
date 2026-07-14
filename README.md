@@ -445,3 +445,30 @@ Agent Script expression:
 + {{AFT_URL_GCB_Common_Params}}
 + "&forceStart=true"
 ```
+
+
+## v1.7.2.71-faster-page-load-fallback
+
+Page-load fallback timing update:
+
+- Previous one-time fallback delay: 4 seconds
+- New one-time fallback delay: 2 seconds
+- Notification-driven send remains the primary path.
+- The fallback still runs only once for the current page load.
+- Existing duplicate locks and participant-data confirmation remain unchanged.
+- No change to REST retry, notification reconnect cycles, OAuth/MFA, transfer, supervisor, language, Hold/Resume, or Prospects logic.
+
+Versions:
+
+- GCB: `v1.7.2.71-faster-page-load-fallback`
+- ChatMonitor UI: `v1.2.30`
+- Cache: `172271`
+
+Agent Script expression:
+
+```text
+{{AFT_URL_GCB_Root_URL}}
++ "/monitorwake.html?v=172271"
++ {{AFT_URL_GCB_Common_Params}}
++ "&forceStart=true"
+```

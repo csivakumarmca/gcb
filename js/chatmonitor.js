@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.29';
+const APP_VERSION = 'v1.2.30';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -36,6 +36,7 @@ const API_RETRY_DELAYS_MS = [0, 1000, 3000];
 const NOTIFICATION_RECONNECT_ATTEMPTS_PER_CYCLE = 3; // Independent from REST retry policy.
 const NOTIFICATION_RECONNECT_COOLDOWN_MS = 5 * 60 * 1000;
 const NOTIFICATION_RECONNECT_DELAYS_MS = [2000, 5000, 10000];
+const PAGE_LOAD_FALLBACK_DELAY_MS = 2000;
 const DEFAULT_SUPPORT_ROLES = ['RAK IT Admin','RAK Script Admin','RAK Access control','AFT_Support'];
 const DEFAULT_ADMIN_ROLES = ['AFT_Support','RAK IT Admin'];
 let latestGcbAccessConfig = { supportRoles: DEFAULT_SUPPORT_ROLES.slice(), adminRoles: DEFAULT_ADMIN_ROLES.slice(), supervisorKeyword: 'supervisor' };
@@ -1121,7 +1122,7 @@ async function handleMonitorWakeRequest(request, source){
     if(socketIsOpen()){
       await recoverWakeConversation(request,'agent-script-wake-primary');
     }else{
-      setTimeout(()=>recoverWakeConversation(request,'page-load-fallback-joined-greeting'),4000);
+      setTimeout(()=>recoverWakeConversation(request,'page-load-fallback-joined-greeting'),PAGE_LOAD_FALLBACK_DELAY_MS);
     }
   }catch(e){
     setMonitorStatus('Recovery failed');
