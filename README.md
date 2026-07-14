@@ -3,7 +3,7 @@
   Purpose: Package notes for the current GCB build and deployment model.
            Documents direct page auth fallback, ChatMonitor replacement, and recommended URLs.
 -->
-# RAKBANK Genesys Context Bridge (GCB)
+# AFT Genesys Context Bridge (GCB)
 
 Updated package: v1.7.2.30-participant-status
 
@@ -472,3 +472,714 @@ Agent Script expression:
 + {{AFT_URL_GCB_Common_Params}}
 + "&forceStart=true"
 ```
+
+
+## v1.7.2.72-customer-details-html — DEV Customer Details Migration
+
+This DEV-only change moves the entire approved Customer Details section into `prospects.html`.
+
+Displayed fields:
+
+- Customer Name — read-only
+- Customer Type — read-only
+- Mobile Number — read-only
+- Card No / Account — selectable dropdown
+
+Supported URL parameters:
+
+```text
+&customerName=<SI_Customer_Name>
+&customerType=<SI_Customer_Type>
+&mobileNumber=<SI_Customer_MobileNumber>
+&cardAccountList=<SI_Product_CardAccountNoList or prepared string list>
+```
+
+The page also supports participant-attribute fallbacks using the original `SI_*` names.
+
+Accepted Card/Account list formats:
+
+- JSON array of strings
+- JSON array of objects with `value`, `label`, and optional `type`
+- Pipe-separated values
+- Semicolon-separated values
+- Newline-separated values
+- Comma-separated values
+
+On Prospects Submit, the selected value is stored in:
+
+```text
+pia_ddl_Selected_AccountNumber
+Agent_Selected_CardAccount
+Agent_Selected_CardAccount_Display
+Agent_Selected_CardAccount_Type
+Prospects_Selected_CardAccount
+Prospects_Selected_CardAccount_Display
+Prospects_Selected_CardAccount_Type
+```
+
+Versions:
+
+- GCB: `v1.7.2.72-customer-details-html`
+- ChatMonitor UI: `v1.2.31`
+- Prospects: `Prospects_v3.16`
+- Cache: `172272`
+
+DEV Agent Script expression:
+
+```text
+{{AFT_URL_GCB_Root_URL}}
++ "/prospects.html?v=172272"
++ {{AFT_URL_GCB_Common_Params}}
++ "&customerName=" + {{SI_Customer_Name}}
++ "&customerType=" + {{SI_Customer_Type}}
++ "&mobileNumber=" + {{SI_Customer_MobileNumber}}
++ "&cardAccountList=" + {{SI_Product_CardAccountNoList}}
+```
+
+The PROD package remains unchanged.
+
+
+## v1.7.2.73-customer-details-layout-fix
+
+- Customer Details is now a separate top-level section.
+- Service Classification starts below Customer Details.
+- Customer labels: Arial 12px bold.
+- Customer values: Arial 11px.
+- Customer field height: 29px.
+- Approved two-column spacing, borders, header height, and padding restored.
+- No participant-data, Card/Account, wrap-up, or submit logic changed.
+
+Versions: GCB `v1.7.2.73-customer-details-layout-fix`, ChatMonitor `v1.2.32`, Prospects `Prospects_v3.17`, cache `172273`.
+
+Important: HTML cannot render outside its Genesys Web Page component. The Prospects web component must cover the combined Customer Details + Service Classification area. Remove or hide the old Agent Script Customer Details fields and the old Service Classification header to avoid duplication.
+
+
+## v1.7.2.74-prospects-external-css
+
+Prospects CSS organization update:
+
+- Approved Prospects styling moved from inline `<style>` to `css/prospects.css`.
+- `prospects.html` now loads `./css/prospects.css?v=172274`.
+- Customer Details and Service Classification appearance is unchanged.
+- No functional or business-logic changes.
+
+Versions:
+
+- GCB: `v1.7.2.74-prospects-external-css`
+- ChatMonitor UI: `v1.2.33`
+- Prospects: `Prospects_v3.20`
+- Cache: `172274`
+
+
+## v1.7.2.75-account-list-source-fix
+
+Card No / Account dropdown correction:
+
+- Dropdown source: `SI_Account_AccountIdList` only
+- Removed dropdown parsing from:
+  - `SI_Product_CardAccountNoList`
+  - `CardAccountList`
+- Selected value remains stored in:
+  - `pia_ddl_Selected_AccountNumber`
+
+Expected example:
+
+```text
+SI_Account_AccountIdList = 0342540096001
+```
+
+Dropdown result:
+
+```text
+Select Card/Account
+0342540096001
+```
+
+Versions:
+
+- GCB: `v1.7.2.75-account-list-source-fix`
+- ChatMonitor UI: `v1.2.34`
+- Prospects: `Prospects_v3.21`
+- Cache: `172275`
+
+
+## v1.7.2.76-prospect-account-card-parameter
+
+Prospects Card No / Account participant-data mapping:
+
+```text
+Dropdown source:
+SI_Prospect_AccountOrCard_NumberList
+
+Selected value:
+SI_Prospect_Selected_AccountOrCard_Number
+
+Legacy compatibility selected value:
+pia_ddl_Selected_AccountNumber
+```
+
+Example Architect participant data:
+
+```text
+SI_Prospect_AccountOrCard_NumberList =
+0342540096001|1234********5678|9876********4321
+```
+
+Versions:
+
+- GCB: `v1.7.2.76-prospect-account-card-parameter`
+- ChatMonitor UI: `v1.2.35`
+- Prospects: `Prospects_v3.22`
+- Cache: `172276`
+
+
+## v1.7.2.77-uniform-prospect-participant-names
+
+Prospects participant-data naming standard:
+
+### Agent-selected values
+
+```text
+Agent_Prospect_Selected_AccountOrCard_Number
+Agent_Prospect_Selected_AccountOrCard_Display
+Agent_Prospect_Selected_AccountOrCard_Type
+Agent_Prospect_Selected_TypeOfInteraction
+Agent_Prospect_Selected_ContactReason
+Agent_Prospect_Selected_InteractionOutcome
+Agent_Prospect_Selected_CombinedWrapupCodeName
+Agent_Prospect_Selected_ChannelType
+Agent_Prospect_Selected_Remarks
+```
+
+### Prospects submission metadata
+
+```text
+Agent_Prospect_WrapupCodeId
+Agent_Prospect_WrapupCreated
+Agent_Prospect_SubmittedDateTime
+```
+
+Removed output variable families:
+
+```text
+Agent_Selected_*
+Prospects_Selected_*
+Prospects_*
+SI_Prospect_Selected_*
+pia_ddl_Selected_*
+```
+
+Input dropdown source remains:
+
+```text
+SI_Prospect_AccountOrCard_NumberList
+```
+
+Versions:
+
+- GCB: `v1.7.2.77-uniform-prospect-participant-names`
+- ChatMonitor UI: `v1.2.36`
+- Prospects: `Prospects_v3.23`
+- Cache: `172277`
+
+
+## v1.7.2.78-account-card-id-display-lists
+
+Card No / Account dropdown input:
+
+```text
+SI_Prospect_AccountOrCard_IdList
+SI_Prospect_AccountOrCard_DisplayList
+```
+
+Example:
+
+```text
+SI_Prospect_AccountOrCard_IdList =
+CARD_987654|ACC_0342540096001
+
+SI_Prospect_AccountOrCard_DisplayList =
+Card - 1234********5678|Account - ********96001
+```
+
+The two lists must contain the same number of items in the same order.
+
+Dropdown behavior:
+
+```text
+Displayed value: matching DisplayList item
+Stored value: matching IdList item
+```
+
+Selected participant-data outputs:
+
+```text
+Agent_Prospect_Selected_AccountOrCard_Id
+Agent_Prospect_Selected_AccountOrCard_Display
+Agent_Prospect_Selected_AccountOrCard_Type
+```
+
+Versions:
+
+- GCB: `v1.7.2.78-account-card-id-display-lists`
+- ChatMonitor UI: `v1.2.37`
+- Prospects: `Prospects_v3.24`
+- Cache: `172278`
+
+
+## v1.7.2.79-participant-logging-standard
+
+### Removed selected field
+
+```text
+Agent_Prospect_Selected_AccountOrCard_Type
+```
+
+The selected Card No / Account outputs are now only:
+
+```text
+Agent_Prospect_Selected_AccountOrCard_Id
+Agent_Prospect_Selected_AccountOrCard_Display
+```
+
+### Participant logging standard
+
+All participant log attributes introduced or renamed in this release follow:
+
+```text
+AFT_GCB_<PageOrFunctionality>_Logs_<Meaning>
+```
+
+Prospects:
+
+```text
+AFT_GCB_Logs_Prospects_SearchDropdown
+AFT_GCB_Logs_Prospects_AssignWrapup
+AFT_GCB_Logs_Prospects_LastStep
+AFT_GCB_Logs_Prospects_LastStatus
+AFT_GCB_Logs_Prospects_LastTime
+AFT_GCB_Logs_Prospects_LastTrace
+```
+
+ChatMonitor:
+
+```text
+AFT_GCB_Logs_ChatMonitor_LastStep
+AFT_GCB_Logs_ChatMonitor_LastStatus
+AFT_GCB_Logs_ChatMonitor_LastTime
+AFT_GCB_Logs_ChatMonitor_LastTrace
+```
+
+HoldResume:
+
+```text
+AFT_GCB_Logs_HoldResume_LastStep
+AFT_GCB_Logs_HoldResume_LastStatus
+AFT_GCB_Logs_HoldResume_LastTime
+AFT_GCB_Logs_HoldResume_LastTrace
+AFT_GCB_Logs_HoldResume_LastError
+```
+
+HoldTimer:
+
+```text
+AFT_GCB_Logs_HoldTimer_LastStep
+AFT_GCB_Logs_HoldTimer_LastStatus
+AFT_GCB_Logs_HoldTimer_LastTime
+AFT_GCB_Logs_HoldTimer_LastTrace
+AFT_GCB_Logs_HoldTimer_LastError
+```
+
+Index and MonitorWake retain browser diagnostic logging. They do not write business execution logs to participant data because they are runtime/helper pages rather than agent business actions.
+
+Versions:
+
+- GCB: `v1.7.2.79-participant-logging-standard`
+- ChatMonitor UI: `v1.2.38`
+- Prospects: `Prospects_v3.25`
+- Cache: `172279`
+
+
+## v1.7.2.80-single-participant-log-per-page
+
+Participant logging is consolidated to one attribute per page/functionality:
+
+```text
+AFT_GCB_Logs_Prospects
+AFT_GCB_Logs_ChatMonitor
+AFT_GCB_Logs_HoldResume
+AFT_GCB_Logs_HoldTimer
+```
+
+Each value contains the timestamp, step, status, trace, and error details in one string.
+
+Removed separate log attributes:
+
+```text
+*_Logs_LastStep
+*_Logs_LastStatus
+*_Logs_LastTime
+*_Logs_LastTrace
+*_Logs_LastError
+```
+
+Versions:
+
+- GCB: `v1.7.2.80-single-participant-log-per-page`
+- ChatMonitor UI: `v1.2.39`
+- Prospects: `Prospects_v3.26`
+- Cache: `172280`
+
+
+## v1.7.2.81-meaningful-participant-logs
+
+One participant log attribute remains per operational page:
+
+```text
+AFT_GCB_Logs_Prospects
+AFT_GCB_Logs_ChatMonitor
+AFT_GCB_Logs_HoldResume
+AFT_GCB_Logs_HoldTimer
+```
+
+Only useful post-disposal evidence is stored:
+
+```text
+selected business values
+wrap-up found/created/assigned result
+participant-data save result
+message API success/failure
+retry status and retry delay
+validation block
+final success/failure
+```
+
+Basic page-load and UI-only events are intentionally excluded.
+
+Versions:
+
+- GCB: `v1.7.2.81-meaningful-participant-logs`
+- ChatMonitor UI: `v1.2.40`
+- Prospects: `Prospects_v3.27`
+- Cache: `172281`
+
+
+## v1.7.2.82-optional-card-account
+
+The Prospects `Card No / Account` field is now optional.
+
+Behavior:
+
+```text
+No selection:
+Submit continues normally.
+Agent_Prospect_Selected_AccountOrCard_Id = ""
+Agent_Prospect_Selected_AccountOrCard_Display = ""
+```
+
+When selected, the existing ID/display mapping remains unchanged.
+
+Versions:
+
+- GCB: `v1.7.2.82-optional-card-account`
+- ChatMonitor UI: `v1.2.41`
+- Prospects: `Prospects_v3.28`
+- Cache: `172282`
+
+
+## v1.7.2.83-logs-prefix-standard
+
+Participant log attributes now use the common searchable prefix:
+
+```text
+AFT_GCB_Logs_Prospects
+AFT_GCB_Logs_ChatMonitor
+AFT_GCB_Logs_HoldResume
+AFT_GCB_Logs_HoldTimer
+AFT_GCB_Logs_MonitorWake
+```
+
+This groups all log attributes together under:
+
+```text
+AFT_GCB_Logs_
+```
+
+Versions:
+
+- GCB: `v1.7.2.83-logs-prefix-standard`
+- ChatMonitor UI: `v1.2.42`
+- Prospects: `Prospects_v3.29`
+- Cache: `172283`
+
+
+## Product Branding
+
+```text
+Product Name: AFT Genesys Context Bridge
+Product Short Name: AFT GCB
+Customer / Project Context: RAKBANK
+```
+
+## v1.7.2.84-aft-branding-standard
+
+This release updates product branding across code comments, metadata, README content, UI text, and release information.
+
+Versions:
+
+- AFT GCB: `v1.7.2.84-aft-branding-standard`
+- ChatMonitor UI: `v1.2.43`
+- Prospects: `Prospects_v3.30`
+- Cache: `172284`
+
+
+## v1.7.2.85-agent-side-logs-fix
+
+### Participant log placement correction
+
+ChatMonitor log:
+
+```text
+AFT_GCB_Logs_ChatMonitor
+```
+
+is now written to the current agent participant.
+
+The following ChatMonitor control attributes remain on the customer participant because they are required for cross-tab locking and duplicate prevention:
+
+```text
+AFT_GCB_SendLockKey
+AFT_GCB_SendLockOwner
+AFT_GCB_SendLockMessageType
+AFT_GCB_SendLockTime
+AFT_GCB_JoinedSentKeys
+```
+
+### Hold/Resume functionality log
+
+Both `holdresume.html` and `holdtimer.html` now use:
+
+```text
+AFT_GCB_Logs_HoldResume
+```
+
+The separate attribute below is removed:
+
+```text
+AFT_GCB_Logs_HoldTimer
+```
+
+Versions:
+
+- AFT GCB: `v1.7.2.85-agent-side-logs-fix`
+- ChatMonitor UI: `v1.2.44`
+- Prospects: `Prospects_v3.31`
+- Cache: `172285`
+
+
+## v1.7.2.86-prospects-participant-mapping
+
+Prospects mapping data now comes from Architect participant attributes:
+
+```text
+SI_Prospect_ContactReasonListJson
+SI_Prospect_InteractionOutcomeListJson
+```
+
+Both attributes must contain valid JSON arrays with the same number of items and matching order.
+
+Example:
+
+```text
+ContactReason[0]       -> InteractionOutcome[0]
+ContactReason[1]       -> InteractionOutcome[1]
+```
+
+Optional Interaction Type participant attribute:
+
+```text
+SI_Prospect_InteractionTypeListJson
+```
+
+When this optional attribute is not supplied, the page temporarily continues using the existing Interaction Type Data Table fallback.
+
+Versions:
+
+- AFT GCB: `v1.7.2.86-prospects-participant-mapping`
+- ChatMonitor UI: `v1.2.45`
+- Prospects: `Prospects_v3.32`
+- Cache: `172286`
+
+
+## v1.7.2.87-remove-all-prospects-datatable-calls
+
+All direct Genesys Data Table calls have been removed from `prospects.html`.
+
+The page reads only:
+
+```text
+SI_Prospect_InteractionTypeListJson
+SI_Prospect_ContactReasonListJson
+SI_Prospect_InteractionOutcomeListJson
+```
+
+When `SI_Prospect_InteractionTypeListJson` is not supplied, the Type of Interaction dropdown remains empty and the page shows a pending message. Contact Reason and Interaction Outcome continue to load from participant data.
+
+Normal agents no longer require:
+
+```text
+architect:datatable:view
+```
+
+Versions:
+
+- AFT GCB: `v1.7.2.87-remove-all-prospects-datatable-calls`
+- ChatMonitor UI: `v1.2.46`
+- Prospects: `Prospects_v3.33`
+- Cache: `172287`
+
+
+## v1.7.2.88-force-prospects-participant-data
+
+Prospects dropdown values now come only from these Architect participant attributes:
+
+```text
+SI_Prospect_InteractionTypeListJson
+SI_Prospect_ContactReasonListJson
+SI_Prospect_InteractionOutcomeListJson
+```
+
+Legacy Prospect Data Action URL parameters are ignored. All three participant attributes are required.
+
+Versions:
+
+- AFT GCB: `v1.7.2.88-force-prospects-participant-data`
+- ChatMonitor UI: `v1.2.47`
+- Prospects: `Prospects_v3.34`
+- Cache: `172288`
+
+
+## v1.7.2.89-status-recovery-fix
+
+Central status recovery updates:
+
+```text
+Maximum hold duration reached
+→ Warning
+
+Manual or automatic Resume completed
+→ Hold / Resume Success
+```
+
+Resolved historical module errors are no longer shown as the current `Last Error` after a later successful recovery for the same page/functionality.
+
+Versions:
+
+- AFT GCB: `v1.7.2.89-status-recovery-fix`
+- ChatMonitor UI: `v1.2.48`
+- Prospects: `Prospects_v3.35`
+- Cache: `172289`
+
+
+## v1.7.2.90-index-hold-warning-refresh
+
+Index Hold / Resume status refresh correction:
+
+```text
+Maximum hold duration reached
+→ Index immediately shows:
+Warning - Maximum hold duration reached. Manual Resume required.
+
+Resume completed
+→ Index immediately shows Success.
+```
+
+Versions:
+
+- AFT GCB: `v1.7.2.90-index-hold-warning-refresh`
+- ChatMonitor UI: `v1.2.49`
+- Prospects: `Prospects_v3.36`
+- Cache: `172290`
+
+
+## v1.7.2.91-repeated-hold-warning-fix
+
+Repeated hold-cycle status handling:
+
+```text
+HOLD_STARTED
+→ Pending - Chat is currently on hold.
+
+HOLD_EXCEEDED
+→ Warning - Maximum hold duration reached. Manual Resume required.
+
+RESUMED_MANUAL / RESUMED_AUTO
+→ Success
+```
+
+The warning is now driven directly by the shared `HOLD_EXCEEDED` event, so it works on the first and subsequent hold attempts.
+
+Versions:
+
+- AFT GCB: `v1.7.2.91-repeated-hold-warning-fix`
+- ChatMonitor UI: `v1.2.50`
+- Prospects: `Prospects_v3.37`
+- Cache: `172291`
+
+
+## v1.7.2.92-max-hold-attempts-index-warning
+
+Maximum hold-attempt warning is synchronized to the Index page:
+
+```text
+You have already reached the maximum allowed hold attempts.
+→ Index Hold / Resume status: Warning
+```
+
+When available, the current and maximum attempt counts are shown.
+
+Versions:
+
+- AFT GCB: `v1.7.2.92-max-hold-attempts-index-warning`
+- ChatMonitor UI: `v1.2.51`
+- Prospects: `Prospects_v3.38`
+- Cache: `172292`
+
+
+## v1.7.2.93-resume-limit-warning
+
+Final allowed Resume status:
+
+```text
+Resume completed before limit
+→ Success - Chat resumed manually/automatically.
+
+Resume completed at maximum Hold attempts
+→ Warning - Chat resumed successfully. You have already reached the maximum allowed hold attempts. (3 / 3)
+```
+
+This removes the need for the agent to attempt a blocked fourth Hold before the Index shows that the limit is exhausted.
+
+Versions:
+
+- AFT GCB: `v1.7.2.93-resume-limit-warning`
+- ChatMonitor UI: `v1.2.52`
+- Prospects: `Prospects_v3.39`
+- Cache: `172293`
+
+
+## v1.7.2.94-production-review-hardening
+
+Development validation package containing the production-review hardening corrections.
+
+- AFT GCB: `v1.7.2.94-production-review-hardening`
+- ChatMonitor UI: `v1.2.53`
+- Prospects: `Prospects_v3.40`
+- Cache: `172294`
+
+Validation focus:
+
+1. Summary refresh must not replace an active Hold warning.
+2. Maximum Hold attempts must remain Warning, not Error.
+3. Final manual or automatic Resume must retain the maximum-attempt warning and count.
+4. Existing messaging, transfer, supervisor, language, duplicate-control, timer, and Prospects behavior must remain unchanged.

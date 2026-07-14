@@ -104,7 +104,7 @@
     (function () {
       "use strict";
 
-      const ROUTER_VERSION = "v1.7.2.71-faster-page-load-fallback";
+      const ROUTER_VERSION = "v1.7.2.94-production-review-hardening";
       const C = window.RakCommon;
       const Auth = window.RakAuth;
       const Api = window.GenesysApi;
@@ -229,10 +229,22 @@
       }
 
 
+      function getHoldAlertNotificationMarker(record) {
+        return "GCB_HOLD_ALERT_SENT_" +
+          C.safeString(record && record.key || "").replace(/[^a-zA-Z0-9_.:-]+/g, "_");
+      }
+
+      function clearHoldAlertNotificationMarker(record) {
+        try {
+          const key = getHoldAlertNotificationMarker(record);
+          if (key) localStorage.removeItem(key);
+        } catch (_) {}
+      }
+
       function notifyHoldExceededOnce(record) {
         try {
           if (!("Notification" in window) || Notification.permission !== "granted") return;
-          const key = "GCB_HOLD_ALERT_SENT_" + C.safeString(record && record.key || "").replace(/[^a-zA-Z0-9_.:-]+/g, "_");
+          const key = getHoldAlertNotificationMarker(record);
           if (localStorage.getItem(key)) return;
           localStorage.setItem(key, new Date().toISOString());
           const n = new Notification("SIVAKUMAR - RAKBANK", {
@@ -289,7 +301,14 @@
               writeCentralHoldRecords(records);
               broadcastCentralHoldEvent("HOLD_EXCEEDED", record);
               notifyHoldExceededOnce(record);
-              if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "failed", "Maximum hold duration reached. Manual Resume required.");
+              if (window.GcbDebug) {
+                window.GcbDebug.setStatus(
+                  "holdResume",
+                  "warning",
+                  "Maximum hold duration reached. Manual Resume required."
+                );
+              }
+              renderStatusLines();
               debugLog("INFO", "CENTRAL_HOLD_EXCEEDED", "key=" + key + " | conversationId=" + C.safeString(record.conversationId));
               changed = true;
               continue;
@@ -317,7 +336,25 @@
               records[key] = record;
               writeCentralHoldRecords(records);
               broadcastCentralHoldEvent("RESUMED_AUTO", record);
-              if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "success", "Auto resume sent by central monitor.");
+              if (window.GcbDebug) {
+                const currentCount = Number(record.currentHoldCount || 0);
+                const maximumCount = Number(record.maxHoldAttempts || 0);
+                const limitReached = maximumCount > 0 && currentCount >= maximumCount;
+                const countText = currentCount > 0 && maximumCount > 0
+                  ? " (" + currentCount + " / " + maximumCount + ")"
+                  : "";
+
+                if (limitReached) {
+                  window.GcbDebug.setStatus(
+                    "holdResume",
+                    "warning",
+                    "Chat resumed successfully. You have already reached the maximum allowed hold attempts." + countText
+                  );
+                } else {
+                  window.GcbDebug.setStatus("holdResume", "success", "Auto resume sent by central monitor.");
+                }
+              }
+              renderStatusLines();
               debugLog("INFO", "CENTRAL_AUTO_RESUME_OK", "key=" + key + " | conversationId=" + C.safeString(record.conversationId));
               changed = true;
             } catch (error) {
@@ -329,6 +366,7 @@
               writeCentralHoldRecords(records);
               broadcastCentralHoldEvent("AUTO_RESUME_FAILED", record);
               if (window.GcbDebug) window.GcbDebug.setStatus("holdResume", "failed", "Central auto-resume failed: " + record.lastError);
+              renderStatusLines();
               debugLog("ERROR", "CENTRAL_AUTO_RESUME_FAILED", "key=" + key + " | " + record.lastError);
               changed = true;
             }
@@ -352,7 +390,113 @@
         try {
           if (typeof BroadcastChannel !== "undefined") {
             const channel = new BroadcastChannel(GCB_HOLD_CHANNEL);
-            channel.onmessage = function () { processCentralHoldMonitor("BROADCAST"); };
+            channel.onmessage = function (event) {
+              const message = event && event.data ? event.data : {};
+              const type = C.safeString(message.type).toUpperCase();
+
+              if (type === "MAX_ATTEMPTS_BLOCKED") {
+                const record = message.record || {};
+                const currentCount = C.safeString(record.currentHoldCount);
+                const maximumCount = C.safeString(record.maxHoldAttempts);
+                const countText = currentCount && maximumCount
+                  ? " (" + currentCount + " / " + maximumCount + ")"
+                  : "";
+
+                if (window.GcbDebug) {
+                  window.GcbDebug.setStatus(
+                    "holdResume",
+                    "warning",
+                    "You have already reached the maximum allowed hold attempts." + countText
+                  );
+                  window.GcbDebug.log(
+                    "INFO",
+                    "HOLD_MAX_ATTEMPTS_WARNING",
+                    "Maximum allowed hold attempts reached." + countText
+                  );
+                }
+                renderStatusLines();
+              } else if (type === "HOLD_EXCEEDED") {
+                if (window.GcbDebug) {
+                  window.GcbDebug.setStatus(
+                    "holdResume",
+                    "warning",
+                    "Maximum hold duration reached. Manual Resume required."
+                  );
+                  window.GcbDebug.log(
+                    "INFO",
+                    "HOLD_RESUME_WARNING",
+                    "Maximum hold duration reached. Manual Resume required."
+                  );
+                }
+                renderStatusLines();
+              } else if (type === "RESUMED_MANUAL") {
+                const record = message.record || {};
+                const currentCount = Number(record.currentHoldCount || 0);
+                const maximumCount = Number(record.maxHoldAttempts || 0);
+                const limitReached = maximumCount > 0 && currentCount >= maximumCount;
+                const countText = currentCount > 0 && maximumCount > 0
+                  ? " (" + currentCount + " / " + maximumCount + ")"
+                  : "";
+
+                clearHoldAlertNotificationMarker(record);
+
+                if (window.GcbDebug) {
+                  if (limitReached) {
+                    window.GcbDebug.setStatus(
+                      "holdResume",
+                      "warning",
+                      "Chat resumed successfully. You have already reached the maximum allowed hold attempts." + countText
+                    );
+                    window.GcbDebug.log(
+                      "INFO",
+                      "HOLD_RESUME_LIMIT_REACHED",
+                      "Manual Resume completed and maximum hold attempts reached." + countText
+                    );
+                  } else {
+                    window.GcbDebug.setStatus("holdResume", "success", "Chat resumed manually.");
+                    window.GcbDebug.log("INFO", "HOLD_RESUME_RECOVERED", "Manual Resume completed.");
+                  }
+                }
+                renderStatusLines();
+              } else if (type === "RESUMED_AUTO") {
+                const record = message.record || {};
+                const currentCount = Number(record.currentHoldCount || 0);
+                const maximumCount = Number(record.maxHoldAttempts || 0);
+                const limitReached = maximumCount > 0 && currentCount >= maximumCount;
+                const countText = currentCount > 0 && maximumCount > 0
+                  ? " (" + currentCount + " / " + maximumCount + ")"
+                  : "";
+
+                clearHoldAlertNotificationMarker(record);
+
+                if (window.GcbDebug) {
+                  if (limitReached) {
+                    window.GcbDebug.setStatus(
+                      "holdResume",
+                      "warning",
+                      "Chat resumed successfully. You have already reached the maximum allowed hold attempts." + countText
+                    );
+                    window.GcbDebug.log(
+                      "INFO",
+                      "HOLD_RESUME_LIMIT_REACHED",
+                      "Automatic Resume completed and maximum hold attempts reached." + countText
+                    );
+                  } else {
+                    window.GcbDebug.setStatus("holdResume", "success", "Chat resumed automatically.");
+                    window.GcbDebug.log("INFO", "HOLD_RESUME_RECOVERED", "Automatic Resume completed.");
+                  }
+                }
+                renderStatusLines();
+              } else if (type === "HOLD_STARTED") {
+                clearHoldAlertNotificationMarker(message.record);
+                if (window.GcbDebug) {
+                  window.GcbDebug.setStatus("holdResume", "pending", "Chat is currently on hold.");
+                }
+                renderStatusLines();
+              }
+
+              processCentralHoldMonitor("BROADCAST");
+            };
           }
         } catch (_) {}
       }
@@ -371,12 +515,17 @@
         const s = C.safeString(state).toLowerCase();
         if (s === "success") return "status-ok";
         if (s === "failed") return "status-fail";
+        if (s === "warning") return "status-pending";
         return "status-pending";
       }
 
       function statusText(status, defaultText) {
         if (!status || !status.state) return defaultText || "Not run";
-        const state = status.state === "success" ? "Success" : status.state === "failed" ? "Failed" : "Pending";
+        const state =
+          status.state === "success" ? "Success" :
+          status.state === "failed" ? "Failed" :
+          status.state === "warning" ? "Warning" :
+          "Pending";
         return state + (status.reason ? " - " + status.reason : "");
       }
 
@@ -438,12 +587,34 @@
         const events = window.GcbDebug ? window.GcbDebug.getEvents() : [];
         let lastApi = null;
         let lastError = null;
+        const recoveredModules = new Set();
+
         for (let i = events.length - 1; i >= 0; i -= 1) {
           const event = events[i] || {};
-          if (!lastApi && ["FETCH_DONE", "FETCH_FAILED"].includes(C.safeString(event.step).toUpperCase())) lastApi = event;
-          if (!lastError && (C.safeString(event.level).toUpperCase() === "ERROR" || /FAILED|ERROR/.test(C.safeString(event.step).toUpperCase()))) lastError = event;
+          const moduleName = C.safeString(event.module || event.page).toLowerCase();
+          const level = C.safeString(event.level).toUpperCase();
+          const step = C.safeString(event.step).toUpperCase();
+          const message = C.safeString(event.message);
+
+          if (!lastApi && ["FETCH_DONE", "FETCH_FAILED"].includes(step)) lastApi = event;
+
+          const isRecovery =
+            level !== "ERROR" &&
+            (
+              /^STATUS_/.test(step) && /loaded|success|completed|resumed|sent/i.test(message) ||
+              /VALUES_LOADED|SEND_OK|RESUMED_|AUTO_RESUME_OK/.test(step)
+            );
+
+          if (isRecovery && moduleName) recoveredModules.add(moduleName);
+
+          const isError = level === "ERROR" || /FAILED|ERROR/.test(step);
+          if (!lastError && isError && !recoveredModules.has(moduleName)) {
+            lastError = event;
+          }
+
           if (lastApi && lastError) break;
         }
+
         return { lastApi, lastError };
       }
 

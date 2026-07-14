@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.30';
+const APP_VERSION = 'v1.2.53';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -33,6 +33,17 @@ const MAX_RECOVERY_CONVERSATIONS = 5;
 const MAX_CONCISE_LOG_EVENTS = 50;
 const API_MAX_ATTEMPTS = 3; // Standard Genesys REST transaction: maximum 3 total attempts.
 const API_RETRY_DELAYS_MS = [0, 1000, 3000];
+let participantApiRetryTrace = [];
+function recordParticipantApiRetry(path, method, status, attempt, nextAttempt, waitMs){
+  participantApiRetryTrace.push(
+    `api::${method || 'GET'} ${path} ==> status::${status} ==> attempt::${attempt} ==> nextAttempt::${nextAttempt} ==> waitMs::${waitMs}`
+  );
+  if(participantApiRetryTrace.length > 4) participantApiRetryTrace = participantApiRetryTrace.slice(-4);
+}
+function participantApiRetrySummary(){
+  return participantApiRetryTrace.length ? participantApiRetryTrace.join(' | ') : 'apiRetry::NONE';
+}
+
 const NOTIFICATION_RECONNECT_ATTEMPTS_PER_CYCLE = 3; // Independent from REST retry policy.
 const NOTIFICATION_RECONNECT_COOLDOWN_MS = 5 * 60 * 1000;
 const NOTIFICATION_RECONNECT_DELAYS_MS = [2000, 5000, 10000];
@@ -604,6 +615,7 @@ async function api(path, opts={}){
       if(!retryable || attempt>=API_MAX_ATTEMPTS) throw error;
       const waitMs=retryAfterMs(res,API_RETRY_DELAYS_MS[attempt]||3000);
       log('WARN',{apiRetry:true,path,method:opts.method||'GET',status:res.status,attempt,nextAttempt:attempt+1,waitMs});
+      recordParticipantApiRetry(path,opts.method||'GET',res.status,attempt,attempt+1,waitMs);
       await delay(waitMs);
     }catch(error){
       if(error?.status) throw error;
@@ -611,6 +623,7 @@ async function api(path, opts={}){
       if(attempt>=API_MAX_ATTEMPTS) throw error;
       const waitMs=API_RETRY_DELAYS_MS[attempt]||3000;
       log('WARN',{apiRetry:true,path,method:opts.method||'GET',status:'NETWORK',attempt,nextAttempt:attempt+1,waitMs});
+      recordParticipantApiRetry(path,opts.method||'GET','NETWORK',attempt,attempt+1,waitMs);
       await delay(waitMs);
     }
   }
@@ -1207,7 +1220,19 @@ function processConversationBody(body, source='notification'){
   refreshTables();
   if(info.state==='JOINED / CONNECTED'){
     log('INFO',`JOINED / CONNECTED detected. recordId=${rec.recordId}; conversationId=${rec.conversationId}; communicationId=${rec.communicationId||'-'}; autoSend=${$('autoSendGreeting').checked}; source=${source}`);
-    maybeAutoSendGreeting(rec).catch(e=>{ rec.greetingStatus='Failed'; rec.lastAction=e.message; addAdminEvent('AUTO GREETING ERROR',rec,e.message); log('ERROR',e.message); refreshTables(); });
+    maybeAutoSendGreeting(rec).catch(async e=>{
+      rec.greetingStatus='Failed';
+      rec.lastAction=e.message;
+      addAdminEvent('AUTO GREETING ERROR',rec,e.message);
+      log('ERROR',e.message);
+      await writeChatMonitorAgentLogSafe(
+        rec,
+        'FAILED',
+        'MESSAGE_SEND',
+        `messageType::${rec.messageType || 'MESSAGE'} ==> error::${e.message || e}`
+      );
+      refreshTables();
+    });
   }
 }
 function findCurrentAgentParticipant(participants){
@@ -1656,6 +1681,27 @@ async function getLatestCustomerAttributes(rec){
     return {attrs:{}, customerParticipantId:rec.customerParticipantId || ''};
   }
 }
+async function writeChatMonitorAgentLogSafe(rec, status, stage, details){
+  try{
+    const participantId=String(rec?.participantId||'').trim();
+    const conversationId=String(rec?.conversationId||'').trim();
+    if(!conversationId || !participantId) return;
+    const value=[
+      new Date().toISOString(),
+      `version::${APP_VERSION}`,
+      `stage::${stage || 'MESSAGE_SEND'}`,
+      `status::${status || 'INFO'}`,
+      details || '',
+      participantApiRetrySummary()
+    ].filter(Boolean).join(' ==> ').slice(0,4000);
+    await api(`/api/v2/conversations/${encodeURIComponent(conversationId)}/participants/${encodeURIComponent(participantId)}/attributes`,{
+      method:'PATCH',
+      body:JSON.stringify({attributes:{AFT_GCB_Logs_ChatMonitor:value}})
+    });
+  }catch(e){
+    log('WARN',{chatMonitorAgentLogWriteFailed:true,error:e.message,conversationId:rec?.conversationId||'',participantId:rec?.participantId||''});
+  }
+}
 async function reserveCrossTabSendLock(rec, key, msgType){
   if(!rec.customerParticipantId){
     log('WARN',`No customer participant ID found for cross-tab send lock. Falling back to participant-data duplicate check only. key=${key}`);
@@ -1719,6 +1765,12 @@ async function updateCustomerParticipantAttributes(rec, key, decision){
     method:'PATCH',body:JSON.stringify({attributes})
   });
   rec.existingJoinedKeys=mergedKeys;
+  await writeChatMonitorAgentLogSafe(
+    rec,
+    'SUCCESS',
+    'MESSAGE_SEND',
+    `messageType::${decision.messageType || 'MESSAGE'} ==> customerParticipantData::UPDATED`
+  );
   return result;
 }
 async function maybeAutoSendGreeting(rec){

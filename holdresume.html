@@ -1087,7 +1087,7 @@
     }
 
     function showMaxAttemptsAlert() {
-      showPersistentAlert(getMaxAttemptsAlertMessage(), "error");
+      showPersistentAlert(getMaxAttemptsAlertMessage(), "warning");
     }
 
     function refreshPersistentAlert() {
@@ -1346,6 +1346,8 @@
         resumeMessageText: CONFIG.resumeMessageText,
         maxHoldTime: CONFIG.maxHoldTime,
         autoResumeEnabled: CONFIG.autoResumeEnabled,
+        currentHoldCount: getEffectiveHoldCount(),
+        maxHoldAttempts: CONFIG.maxHoldAttempts,
         holdStartTimeMs: nowMs,
         holdStartTimeUtc: new Date(nowMs).toISOString(),
         status: "HOLD",
@@ -1370,6 +1372,13 @@
       if (!record) return;
       const nowIso = new Date().toISOString();
       record.status = status;
+
+      // Include hold-attempt context in all shared status events.
+      // The Index uses this after Resume to show that the interaction has exhausted
+      // the allowed Hold attempts, without requiring a fourth blocked Hold click.
+      record.currentHoldCount = getEffectiveHoldCount();
+      record.maxHoldAttempts = CONFIG.maxHoldAttempts;
+
       // RESUME_IN_PROGRESS is also treated as resumeSent=true so the central monitor will not send another Resume
       // while a manual Resume or central Resume is already being processed.
       record.resumeSent = status === "RESUME_IN_PROGRESS" || status === "RESUMED_AUTO" || status === "RESUMED_MANUAL";
@@ -1873,6 +1882,34 @@
 
     function buildRequestId(action) {
       return sanitizeKey((CONFIG.conversationId || "NO_CONV") + "-" + action + "-" + (CONFIG.agentCommunicationId || CONFIG.communicationId || "NO_COMM") + "-" + Date.now());
+    }
+
+    async function writeHoldResumeParticipantLogSafe(status, step, trace, errorText) {
+      try {
+        const token = getAccessToken();
+        const participantId = CONFIG.agentParticipantId || CONFIG.participantId;
+        if (!token || !CONFIG.conversationId || !participantId) return;
+        const logParts = [
+          new Date().toISOString(),
+          safeString(step || "UNKNOWN"),
+          safeString(status || "INFO"),
+          safeString(trace || "")
+        ];
+        if (errorText) logParts.push("ERROR::" + safeString(errorText));
+        const attributes = {
+          AFT_GCB_Logs_HoldResume: logParts.join(" ==> ").slice(0, 4000)
+        };
+        const endpoint = API_BASE + "/api/v2/conversations/" + encodeURIComponent(CONFIG.conversationId) +
+          "/participants/" + encodeURIComponent(participantId) + "/attributes";
+        const response = await fetch(endpoint, {
+          method: "PATCH",
+          headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+          body: JSON.stringify({ attributes: attributes })
+        });
+        if (!response.ok) addDebug("PARTICIPANT_LOG_WRITE_FAILED", "HTTP " + response.status);
+      } catch (logError) {
+        addDebug("PARTICIPANT_LOG_WRITE_FAILED", logError && logError.message ? logError.message : String(logError));
+      }
     }
 
     async function sendMessageToConversation(action, messageText) {
@@ -2592,8 +2629,8 @@
         // show the maximum-attempts alert as the final state instead of the duration warning.
         if (getEffectiveHoldCount() >= CONFIG.maxHoldAttempts) {
           const maxMessage = getMaxAttemptsAlertMessage();
-          startAttentionAlert(maxMessage, "error", "⛔ Max Hold Reached");
-          setStatus("Maximum hold attempts reached. Further Hold is not allowed.", "error");
+          startAttentionAlert(maxMessage, "warning", "⛔ Max Hold Reached");
+          setStatus("Maximum hold attempts reached. Further Hold is not allowed.", "warning");
         } else {
           const durationMessage = CONFIG.holdMaxTimeAlertText + " (" + CONFIG.maxHoldTime + " seconds). " + CONFIG.autoResumeSentText;
           startAttentionAlert(durationMessage, "warning", "⚠️ Auto Resume Sent");
@@ -2701,17 +2738,46 @@
       }
 
       const messageText = action === "HOLD" ? CONFIG.holdMessageText : CONFIG.resumeMessageText;
+      const participantTrace = [
+        "action::" + action,
+        "source::" + safeString(triggerSource)
+      ];
 
       if (action === "HOLD") {
         requestBrowserNotificationPermissionIfPossible(triggerSource === "EXTERNAL" ? "EXTERNAL_HOLD" : "HOLD_CLICK");
       }
 
       if (action === "HOLD" && getEffectiveHoldCount() >= CONFIG.maxHoldAttempts) {
-        const validationMessage = "⚠️  ⛔ You have already reached the maximum allowed hold attempts. ⏱ (" + getEffectiveHoldCount() + " / " + CONFIG.maxHoldAttempts + ")";
-        startAttentionAlert(validationMessage, "error", "⛔ Max Hold Reached");
-        setStatus(validationMessage, "error");
-        addDebug("VALIDATION_BLOCK", "Max hold attempts reached. trigger=" + safeString(triggerSource) + " | effectiveCount=" + getEffectiveHoldCount() + " | max=" + CONFIG.maxHoldAttempts);
+        const currentHoldCount = getEffectiveHoldCount();
+        const validationMessage = "⚠️  ⛔ You have already reached the maximum allowed hold attempts. ⏱ (" + currentHoldCount + " / " + CONFIG.maxHoldAttempts + ")";
+
+        startAttentionAlert(validationMessage, "warning", "⛔ Max Hold Reached");
+        setStatus(validationMessage, "warning");
+
+        broadcastCentralHoldEvent("MAX_ATTEMPTS_BLOCKED", {
+          conversationId: CONFIG.conversationId || "",
+          agentParticipantId: CONFIG.agentParticipantId || CONFIG.participantId || "",
+          currentHoldCount: currentHoldCount,
+          maxHoldAttempts: CONFIG.maxHoldAttempts,
+          source: "holdresume.html",
+          time: new Date().toISOString()
+        });
+
+        addDebug(
+          "VALIDATION_BLOCK",
+          "Max hold attempts reached. trigger=" + safeString(triggerSource) +
+          " | effectiveCount=" + currentHoldCount +
+          " | max=" + CONFIG.maxHoldAttempts
+        );
+
         updateButtonState();
+        participantTrace.push("validation::MAX_ATTEMPTS_BLOCKED");
+        await writeHoldResumeParticipantLogSafe(
+          "BLOCKED",
+          "VALIDATION",
+          participantTrace.join(" ==> "),
+          validationMessage
+        );
         return { blocked: true, reason: "MAX_ATTEMPTS" };
       }
 
@@ -2731,6 +2797,7 @@
       setStatus(action === "HOLD" ? "Sending Hold message..." : "Sending Resume message...", "info");
 
       try {
+        participantTrace.push("messageApi::START");
         const result = await sendMessageToConversation(action, messageText);
         if (result && result.redirected) return { redirected: true };
 
@@ -2753,7 +2820,10 @@
         }
 
         updateButtonState();
+        participantTrace.push("messageApi::SUCCESS");
         await refreshHoldSummaryAfterAction(action);
+        participantTrace.push("holdSummary::REFRESHED");
+        await writeHoldResumeParticipantLogSafe("SUCCESS", action + "_COMPLETED", participantTrace.join(" ==> "), "");
         hideStatusSoon();
         return { ok: true, action: action };
       } catch (err) {
@@ -2763,6 +2833,8 @@
         }
         setStatus(err.message || String(err), "error");
         addDebug(triggerSource === "EXTERNAL" ? "EXTERNAL_ACTION_FAILED" : "CLICK_FAILED", err.message || String(err));
+        participantTrace.push("ERROR::" + safeString(err.message || err));
+        await writeHoldResumeParticipantLogSafe("FAILED", action + "_FAILED", participantTrace.join(" ==> "), err.message || String(err));
         throw err;
       } finally {
         isProcessing = false;
