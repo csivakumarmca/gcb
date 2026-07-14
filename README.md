@@ -414,3 +414,34 @@ Agent Script expression:
 + {{AFT_URL_GCB_Common_Params}}
 + "&forceStart=true"
 ```
+
+
+## v1.7.2.70-notification-retry-cycle
+
+Notification reconnect policy:
+
+- Standard Genesys REST request: maximum 3 total attempts.
+- Notification WebSocket recovery is independent:
+  - Attempt 1 after 2 seconds
+  - Attempt 2 after 5 seconds
+  - Attempt 3 after 10 seconds
+  - Five-minute cooldown
+  - Start a new three-attempt cycle after cooldown
+- A new Agent Script wake, browser online/focus/visibility/pageshow event, or manual restart may restart immediately.
+- Added `cycle`, `attempt`, `attemptsPerCycle`, and policy details to reconnect diagnostics.
+- No Joined/Greeting, MonitorWake fallback, transfer, supervisor, language, duplicate, OAuth/MFA, Hold/Resume, or Prospects logic changed.
+
+Versions:
+
+- GCB: `v1.7.2.70-notification-retry-cycle`
+- ChatMonitor UI: `v1.2.29`
+- Cache: `172270`
+
+Agent Script expression:
+
+```text
+{{AFT_URL_GCB_Root_URL}}
++ "/monitorwake.html?v=172270"
++ {{AFT_URL_GCB_Common_Params}}
++ "&forceStart=true"
+```

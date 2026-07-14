@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.28';
+const APP_VERSION = 'v1.2.29';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -31,10 +31,11 @@ const POST_MFA_RECOVERY_MAX_AGE_MS = 15 * 60 * 1000;
 const MAX_TRACKED_CONVERSATIONS = 5;
 const MAX_RECOVERY_CONVERSATIONS = 5;
 const MAX_CONCISE_LOG_EVENTS = 50;
-const API_MAX_ATTEMPTS = 3;
+const API_MAX_ATTEMPTS = 3; // Standard Genesys REST transaction: maximum 3 total attempts.
 const API_RETRY_DELAYS_MS = [0, 1000, 3000];
-const MONITOR_RECONNECT_MAX_ATTEMPTS = 3;
-const MONITOR_RECONNECT_COOLDOWN_MS = 5 * 60 * 1000;
+const NOTIFICATION_RECONNECT_ATTEMPTS_PER_CYCLE = 3; // Independent from REST retry policy.
+const NOTIFICATION_RECONNECT_COOLDOWN_MS = 5 * 60 * 1000;
+const NOTIFICATION_RECONNECT_DELAYS_MS = [2000, 5000, 10000];
 const DEFAULT_SUPPORT_ROLES = ['RAK IT Admin','RAK Script Admin','RAK Access control','AFT_Support'];
 const DEFAULT_ADMIN_ROLES = ['AFT_Support','RAK IT Admin'];
 let latestGcbAccessConfig = { supportRoles: DEFAULT_SUPPORT_ROLES.slice(), adminRoles: DEFAULT_ADMIN_ROLES.slice(), supervisorKeyword: 'supervisor' };
@@ -45,9 +46,9 @@ let reconnectTimer = null;
 let reconnectAttempt = 0;
 let monitorStartPromise = null;
 let monitorWatchdogTimer = null;
-const MONITOR_RECONNECT_DELAYS_MS = [2000, 5000, 10000];
 let monitorReconnectSuspendedUntil = 0;
 let monitorReconnectCooldownTimer = null;
+let notificationReconnectCycle = 1;
 const MONITOR_WATCHDOG_MS = 45000;
 const MONITOR_WAKE_CHANNEL = 'AFT_GCB_MONITOR_WAKE_V1';
 const MONITOR_WAKE_EVENT_KEY = 'AFT_GCB_MONITOR_WAKE_EVENT_V1';
@@ -781,24 +782,26 @@ async function ensureAuthenticated(reason){
 
 function scheduleMonitorReconnect(reason){
   if(manualStopRequested || reconnectTimer) return;
-  if(reconnectAttempt>=MONITOR_RECONNECT_MAX_ATTEMPTS){
-    monitorReconnectSuspendedUntil=Date.now()+MONITOR_RECONNECT_COOLDOWN_MS;
+  if(reconnectAttempt>=NOTIFICATION_RECONNECT_ATTEMPTS_PER_CYCLE){
+    monitorReconnectSuspendedUntil=Date.now()+NOTIFICATION_RECONNECT_COOLDOWN_MS;
     setMonitorStatus('Reconnect suspended');
-    log('WARN',{monitorReconnectSuspended:true,reason,attempts:reconnectAttempt,cooldownMs:MONITOR_RECONNECT_COOLDOWN_MS});
+    log('WARN',{monitorReconnectSuspended:true,reason,cycle:notificationReconnectCycle,attempts:reconnectAttempt,attemptsPerCycle:NOTIFICATION_RECONNECT_ATTEMPTS_PER_CYCLE,cooldownMs:NOTIFICATION_RECONNECT_COOLDOWN_MS,policy:'Notification reconnect is 3 attempts per cycle, then cooldown; it is independent from REST API retry.'});
     if(monitorReconnectCooldownTimer) clearTimeout(monitorReconnectCooldownTimer);
     monitorReconnectCooldownTimer=setTimeout(()=>{
       monitorReconnectCooldownTimer=null;
       if(manualStopRequested) return;
       reconnectAttempt=0;
+      notificationReconnectCycle+=1;
       monitorReconnectSuspendedUntil=0;
+      log('INFO',{notificationReconnectCycleStarted:true,cycle:notificationReconnectCycle,reason:'cooldown-expired'});
       ensureMonitorHealthy('reconnect-cooldown-expired');
-    },MONITOR_RECONNECT_COOLDOWN_MS);
+    },NOTIFICATION_RECONNECT_COOLDOWN_MS);
     return;
   }
-  const delayMs=MONITOR_RECONNECT_DELAYS_MS[reconnectAttempt]||MONITOR_RECONNECT_DELAYS_MS[MONITOR_RECONNECT_DELAYS_MS.length-1];
+  const delayMs=NOTIFICATION_RECONNECT_DELAYS_MS[reconnectAttempt]||NOTIFICATION_RECONNECT_DELAYS_MS[NOTIFICATION_RECONNECT_DELAYS_MS.length-1];
   reconnectAttempt+=1;
   setMonitorStatus('Reconnecting');
-  log('WARN',{monitorReconnectScheduled:true,reason,attempt:reconnectAttempt,maxAttempts:MONITOR_RECONNECT_MAX_ATTEMPTS,delayMs});
+  log('WARN',{monitorReconnectScheduled:true,reason,cycle:notificationReconnectCycle,attempt:reconnectAttempt,attemptsPerCycle:NOTIFICATION_RECONNECT_ATTEMPTS_PER_CYCLE,delayMs,policy:'Notification reconnect cycle; not a REST API retry count.'});
   reconnectTimer=setTimeout(async()=>{
     reconnectTimer=null;
     if(manualStopRequested) return;
@@ -943,6 +946,7 @@ async function ensureMonitorHealthy(reason){
   if(forceRecovery){
     monitorReconnectSuspendedUntil=0;
     reconnectAttempt=0;
+    notificationReconnectCycle=1;
     if(monitorReconnectCooldownTimer){ clearTimeout(monitorReconnectCooldownTimer); monitorReconnectCooldownTimer=null; }
   }
   if(socketIsOpen()){
