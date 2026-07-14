@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.26';
+const APP_VERSION = 'v1.2.27';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -27,7 +27,14 @@ const FAST_LOCAL_LOCK_PREFIX = 'AFT_GCB_FAST_LOCK_';
 const FAST_LOCAL_DONE_PREFIX = 'AFT_GCB_FAST_DONE_';
 const FAST_LOCAL_LOCK_TTL_MS = 15000;
 const GCB_INTERACTION_CONTEXTS_KEY = 'AFT_GCB_INTERACTION_CONTEXTS_V1';
-const POST_MFA_RECOVERY_MAX_AGE_MS = 30 * 60 * 1000;
+const POST_MFA_RECOVERY_MAX_AGE_MS = 15 * 60 * 1000;
+const MAX_TRACKED_CONVERSATIONS = 5;
+const MAX_RECOVERY_CONVERSATIONS = 5;
+const MAX_CONCISE_LOG_EVENTS = 50;
+const API_MAX_ATTEMPTS = 3;
+const API_RETRY_DELAYS_MS = [0, 1000, 3000];
+const MONITOR_RECONNECT_MAX_ATTEMPTS = 3;
+const MONITOR_RECONNECT_COOLDOWN_MS = 5 * 60 * 1000;
 const DEFAULT_SUPPORT_ROLES = ['RAK IT Admin','RAK Script Admin','RAK Access control','AFT_Support'];
 const DEFAULT_ADMIN_ROLES = ['AFT_Support','RAK IT Admin'];
 let latestGcbAccessConfig = { supportRoles: DEFAULT_SUPPORT_ROLES.slice(), adminRoles: DEFAULT_ADMIN_ROLES.slice(), supervisorKeyword: 'supervisor' };
@@ -38,7 +45,9 @@ let reconnectTimer = null;
 let reconnectAttempt = 0;
 let monitorStartPromise = null;
 let monitorWatchdogTimer = null;
-const MONITOR_RECONNECT_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+const MONITOR_RECONNECT_DELAYS_MS = [2000, 5000, 10000];
+let monitorReconnectSuspendedUntil = 0;
+let monitorReconnectCooldownTimer = null;
 const MONITOR_WATCHDOG_MS = 45000;
 const MONITOR_WAKE_CHANNEL = 'AFT_GCB_MONITOR_WAKE_V1';
 const MONITOR_WAKE_EVENT_KEY = 'AFT_GCB_MONITOR_WAKE_EVENT_V1';
@@ -198,13 +207,26 @@ function token(){
   return '';
 }
 function apiBase(){ return $('apiBase').value.replace(/\/$/, ''); }
+function compactLogData(data){
+  if(typeof data==='string') return data;
+  if(!data || typeof data!=='object') return String(data ?? '');
+  const verbose=!!$('adminVerbose')?.checked;
+  if(verbose) return JSON.stringify(data, null, 2);
+  const copy={...data};
+  ['roles','roleNames','roleIds','result','payload','raw','connectUri','participants','attributes'].forEach(key=>{
+    if(Array.isArray(copy[key])) copy[key+'Count']=copy[key].length;
+    delete copy[key];
+  });
+  if(Array.isArray(copy.errors)) copy.errors=copy.errors.slice(0,2);
+  return JSON.stringify(copy);
+}
 function log(type, data){
   const level = String(type || 'INFO').toUpperCase();
   const cls = level === 'ERROR' ? 'errText' : level === 'WARN' ? 'warnText' : level === 'OK' ? 'okText' : 'infoText';
-  const text = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  const text = compactLogData(data);
   const line = `[${now()}] ${level}: ${text}`;
   rawLogBuffer.push(line);
-  if(rawLogBuffer.length > 500) rawLogBuffer.shift();
+  while(rawLogBuffer.length > MAX_CONCISE_LOG_EVENTS) rawLogBuffer.shift();
   if(level === 'OK') dashStats.ok++;
   else if(level === 'WARN') dashStats.warn++;
   else if(level === 'ERROR') { dashStats.error++; dashLastError = text.slice(0,180); }
@@ -214,7 +236,7 @@ function log(type, data){
   const logEl=$('log');
   const levelAttr = escapeHtml(level);
   logEl.insertAdjacentHTML('afterbegin', `<div class="line ${cls}" data-level="${levelAttr}">${escapeHtml(line)}</div>`);
-  while(logEl.children.length > 300) logEl.removeChild(logEl.lastElementChild);
+  while(logEl.children.length > MAX_CONCISE_LOG_EVENTS) logEl.removeChild(logEl.lastElementChild);
   applyLogFilter();
   refreshParticipantConfigStatus();
   updateDashboardStatus();
@@ -544,25 +566,53 @@ async function handleOAuthReturn(){
   }catch(e){ log('ERROR','Token exchange failed: '+e.message); }
 }
 function useTokenFromUrl(showMsg=true){ const hash=new URLSearchParams(location.hash.replace(/^#/,'')); const query=new URLSearchParams(location.search); const t=hash.get('access_token')||query.get('access_token'); if(t){$('accessToken').value=t;if(showMsg)log('OK','Access token loaded from URL.')} else if(showMsg)log('WARN','No access_token found in URL.'); }
+function isTransientApiStatus(status){
+  return [408,429,500,502,503,504].includes(Number(status||0));
+}
+function retryAfterMs(response, fallbackMs){
+  const raw=response?.headers?.get?.('Retry-After');
+  if(!raw) return fallbackMs;
+  const seconds=Number(raw);
+  if(Number.isFinite(seconds) && seconds>=0) return Math.min(seconds*1000,60000);
+  const dateMs=Date.parse(raw);
+  return Number.isFinite(dateMs) ? Math.max(0,Math.min(dateMs-Date.now(),60000)) : fallbackMs;
+}
 async function api(path, opts={}){
   if(!token()) {
     const error = new Error('Missing access token.');
     error.status = 401;
     throw error;
   }
-  const res=await fetch(apiBase()+path,{...opts,headers:{'Authorization':'Bearer '+token(),'Content-Type':'application/json',...(opts.headers||{})}});
-  const txt=await res.text(); let body=null; try{body=txt?JSON.parse(txt):null}catch(e){body=txt}
-  if(!res.ok){
-    const error = new Error(`${res.status} ${res.statusText}: ${txt}`);
-    error.status = res.status;
-    error.payload = body;
-    if(res.status===401 && window.RakAuth?.clearToken){
-      window.RakAuth.clearToken();
-      $('accessToken').value='';
+  let lastError=null;
+  for(let attempt=1; attempt<=API_MAX_ATTEMPTS; attempt++){
+    let res=null;
+    try{
+      res=await fetch(apiBase()+path,{...opts,headers:{'Authorization':'Bearer '+token(),'Content-Type':'application/json',...(opts.headers||{})}});
+      const txt=await res.text(); let body=null; try{body=txt?JSON.parse(txt):null}catch(e){body=txt}
+      if(res.ok) return body;
+      const error = new Error(`${res.status} ${res.statusText}: ${txt}`);
+      error.status = res.status;
+      error.payload = body;
+      lastError=error;
+      if(res.status===401 && window.RakAuth?.clearToken){
+        window.RakAuth.clearToken();
+        $('accessToken').value='';
+      }
+      const retryable=isTransientApiStatus(res.status);
+      if(!retryable || attempt>=API_MAX_ATTEMPTS) throw error;
+      const waitMs=retryAfterMs(res,API_RETRY_DELAYS_MS[attempt]||3000);
+      log('WARN',{apiRetry:true,path,method:opts.method||'GET',status:res.status,attempt,nextAttempt:attempt+1,waitMs});
+      await delay(waitMs);
+    }catch(error){
+      if(error?.status) throw error;
+      lastError=error;
+      if(attempt>=API_MAX_ATTEMPTS) throw error;
+      const waitMs=API_RETRY_DELAYS_MS[attempt]||3000;
+      log('WARN',{apiRetry:true,path,method:opts.method||'GET',status:'NETWORK',attempt,nextAttempt:attempt+1,waitMs});
+      await delay(waitMs);
     }
-    throw error;
   }
-  return body;
+  throw lastError || new Error('Genesys API request failed.');
 }
 function getUserDisplayNickname(user){
   return user?.preferredName || user?.name || user?.email || '-';
@@ -633,7 +683,8 @@ async function recoverPublishedActiveInteractions(reason='post-mfa-startup'){
     if(!isValidConversationId(item?.conversationId))return false;
     const age=nowMs-new Date(item.updatedAt||0).getTime();
     return Number.isFinite(age)&&age>=0&&age<=POST_MFA_RECOVERY_MAX_AGE_MS;
-  });
+  }).sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))
+    .slice(0,MAX_RECOVERY_CONVERSATIONS);
   log('INFO',{activeInteractionRecoveryStart:true,reason,candidateCount:recent.length});
   for(const item of recent){
     try{
@@ -730,17 +781,31 @@ async function ensureAuthenticated(reason){
 
 function scheduleMonitorReconnect(reason){
   if(manualStopRequested || reconnectTimer) return;
-  const delayMs=MONITOR_RECONNECT_DELAYS_MS[Math.min(reconnectAttempt,MONITOR_RECONNECT_DELAYS_MS.length-1)];
+  if(reconnectAttempt>=MONITOR_RECONNECT_MAX_ATTEMPTS){
+    monitorReconnectSuspendedUntil=Date.now()+MONITOR_RECONNECT_COOLDOWN_MS;
+    setMonitorStatus('Reconnect suspended');
+    log('WARN',{monitorReconnectSuspended:true,reason,attempts:reconnectAttempt,cooldownMs:MONITOR_RECONNECT_COOLDOWN_MS});
+    if(monitorReconnectCooldownTimer) clearTimeout(monitorReconnectCooldownTimer);
+    monitorReconnectCooldownTimer=setTimeout(()=>{
+      monitorReconnectCooldownTimer=null;
+      if(manualStopRequested) return;
+      reconnectAttempt=0;
+      monitorReconnectSuspendedUntil=0;
+      ensureMonitorHealthy('reconnect-cooldown-expired');
+    },MONITOR_RECONNECT_COOLDOWN_MS);
+    return;
+  }
+  const delayMs=MONITOR_RECONNECT_DELAYS_MS[reconnectAttempt]||MONITOR_RECONNECT_DELAYS_MS[MONITOR_RECONNECT_DELAYS_MS.length-1];
   reconnectAttempt+=1;
   setMonitorStatus('Reconnecting');
-  log('WARN',{monitorReconnectScheduled:true,reason,attempt:reconnectAttempt,delayMs});
+  log('WARN',{monitorReconnectScheduled:true,reason,attempt:reconnectAttempt,maxAttempts:MONITOR_RECONNECT_MAX_ATTEMPTS,delayMs});
   reconnectTimer=setTimeout(async()=>{
     reconnectTimer=null;
     if(manualStopRequested) return;
     try{
       await startMonitor({reason:'reconnect-'+reason});
     }catch(e){
-      log('WARN',{monitorReconnectAttemptFailed:true,reason,error:e.message});
+      log('WARN',{monitorReconnectAttemptFailed:true,reason,attempt:reconnectAttempt,error:e.message});
       scheduleMonitorReconnect(reason);
     }
   },delayMs);
@@ -848,6 +913,8 @@ async function stopMonitor(writeLog=true){
 async function restartMonitorFromUi(){
   manualStopRequested=false;
   reconnectAttempt=0;
+  monitorReconnectSuspendedUntil=0;
+  if(monitorReconnectCooldownTimer){ clearTimeout(monitorReconnectCooldownTimer); monitorReconnectCooldownTimer=null; }
   clearReconnectTimer();
   setMonitorStatus('Starting');
   log('INFO',{manualRestartRequested:true,source:'ui'});
@@ -871,6 +938,13 @@ async function simulateUnexpectedMonitorStop(){
 
 async function ensureMonitorHealthy(reason){
   if(manualStopRequested) return;
+  const forceRecovery=/agent-script-wake|manual|ui|online|pageshow|visibility|focus/i.test(String(reason||''));
+  if(monitorReconnectSuspendedUntil>Date.now() && !forceRecovery) return;
+  if(forceRecovery){
+    monitorReconnectSuspendedUntil=0;
+    reconnectAttempt=0;
+    if(monitorReconnectCooldownTimer){ clearTimeout(monitorReconnectCooldownTimer); monitorReconnectCooldownTimer=null; }
+  }
   if(socketIsOpen()){
     if($('monitorStatus')?.textContent!=='Running') setMonitorStatus('Running');
     return;
@@ -947,9 +1021,9 @@ async function handleMonitorWakeRequest(request, source){
   try{
     await ensureMonitorHealthy('agent-script-wake');
     if(socketIsOpen()){
-      await recoverWakeConversation(request,'agent-script-wake');
+      await recoverWakeConversation(request,'agent-script-wake-primary');
     }else{
-      setTimeout(()=>recoverWakeConversation(request,'agent-script-wake-delayed'),1500);
+      setTimeout(()=>recoverWakeConversation(request,'page-load-fallback-joined-greeting'),4000);
     }
   }catch(e){
     setMonitorStatus('Recovery failed');
@@ -1049,7 +1123,7 @@ function findCurrentAgentParticipant(participants){
 async function resolveCurrentAgentLeg(conversationId, reason){
   if(!conversationId||transferResolutionLocks.has(conversationId))return;
   transferResolutionLocks.add(conversationId);
-  const waits=[150,400,800,1400,2200,3200,4500];
+  const waits=[250,1000,3000];
   try{
     for(let i=0;i<waits.length;i++){
       await delay(waits[i]);
@@ -1099,6 +1173,19 @@ function getAgentState(agent, selectedComm={}){
   }
   return {state,note};
 }
+function pruneTrackedConversations(){
+  if(conversations.size<=MAX_TRACKED_CONVERSATIONS) return;
+  const list=Array.from(conversations.values()).sort((a,b)=>{
+    const aEnded=/ENDED|DISCONNECTED/i.test(String(a.state||'')) ? 1 : 0;
+    const bEnded=/ENDED|DISCONNECTED/i.test(String(b.state||'')) ? 1 : 0;
+    if(aEnded!==bEnded) return bEnded-aEnded;
+    return new Date(a.connectedTime||a.firstTime||0)-new Date(b.connectedTime||b.firstTime||0);
+  });
+  while(conversations.size>MAX_TRACKED_CONVERSATIONS && list.length){
+    const oldest=list.shift();
+    if(oldest?.recordId) conversations.delete(oldest.recordId);
+  }
+}
 function upsertRecord(conversationId,agent,comm,info,body,customer,participants=[]){
   const agentUserId=agent.userId||agent.user?.id||currentUser?.id||'';
   const participantId=agent.id||'';
@@ -1126,7 +1213,7 @@ function upsertRecord(conversationId,agent,comm,info,body,customer,participants=
     existingJoinedKeys:collectExistingJoinedKeys(participants) || customerAttrs.AFT_GCB_JoinedSentKeys || customerAttrs.AFT_GCB_GREETING_SENT_KEYS || '', isTransferJoin, previousAgentCount, messageType:existing.messageType||baseMessageType, supervisorRole:false,
     supervisorRoleChecked:false, roleNames:existing.roleNames||'', gcbConfig };
   if(info.state.includes('ENDED')) rec.greetingStatus = rec.greetingStatus==='Sent' ? 'Sent' : 'Skipped';
-  conversations.set(recordId,rec); latestConversationId=conversationId; latestCommunicationId=rec.communicationId||latestCommunicationId; return rec;
+  conversations.set(recordId,rec); pruneTrackedConversations(); latestConversationId=conversationId; latestCommunicationId=rec.communicationId||latestCommunicationId; return rec;
 }
 function getCustomerSessionId(customer, attrs={}){
   const msg=(customer.messages||customer.sessions||[])[0]||{};

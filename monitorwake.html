@@ -22,6 +22,9 @@
   const MONITOR_LEADER_KEY = "AFT_GCB_MONITOR_LEADER_V1";
   const RUNTIME_CONFIG_KEY = "AFT_GCB_RUNTIME_CONFIG_V1";
   const MONITOR_AUTOSTART_DELAY_MS = 4500;
+  const MAX_CONTEXTS = 5;
+  const MAX_RUNTIME_CONFIG_CHECKS = 5;
+  let runtimeConfigCheckCount = 0;
   const params = new URLSearchParams(location.search || "");
 
   function value(name, legacyName){
@@ -48,7 +51,7 @@
     agentName: value("agentName"),
     language: value("langTag") || value("language") || "",
     forceStart: boolValue("forceStart", true),
-    version: value("version") || "MonitorWake_v1.2"
+    version: value("version") || "MonitorWake_v1.3"
   };
 
   function saveInteractionContext(){
@@ -73,7 +76,7 @@
       const entries = Object.values(safeMap)
         .filter(Boolean)
         .sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))
-        .slice(0,20);
+        .slice(0,MAX_CONTEXTS);
       const trimmed = {};
       entries.forEach(item=>{ if(item && item.conversationId) trimmed[item.conversationId]=item; });
       localStorage.setItem(CONTEXTS_KEY, JSON.stringify(trimmed));
@@ -134,7 +137,7 @@
       if(name!=="v" && name!=="forceStart") next.set(name,value);
     });
 
-    next.set("v","172267");
+    next.set("v","172268");
     next.set("page","chatmonitor");
     next.set("source","AgentScriptAutoStart");
     next.set("routedFrom","monitorwake");
@@ -148,9 +151,12 @@
     const required=["clientId","region","gcTargetEnv","gcHostOrigin"];
     const missing=required.filter(function(name){ return !String(runtime?.[name]||"").trim(); });
     if(missing.length){
+      runtimeConfigCheckCount+=1;
       document.getElementById("status").textContent=
         "Waiting for Interaction Widget runtime configuration: "+missing.join(", ");
-      setTimeout(ensureMonitorLoaded,2000);
+      if(runtimeConfigCheckCount<MAX_RUNTIME_CONFIG_CHECKS){
+        setTimeout(ensureMonitorLoaded,2000);
+      }
       return;
     }
     location.replace(buildAutoStartUrl());

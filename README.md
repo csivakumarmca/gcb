@@ -351,3 +351,42 @@ Versions:
 - GCB: `v1.7.2.67-shared-runtime-config`
 - ChatMonitor UI: `v1.2.26`
 - Cache: `172267`
+
+
+## v1.7.2.68-production-safety
+
+Production safety changes:
+
+- Maximum five recent interaction contexts for the logged-in browser/user.
+- Maximum five ChatMonitor conversation-leg records.
+- Recovery scans only the newest five records and only within 15 minutes.
+- Standard Genesys REST calls: maximum three total attempts.
+- Retry only for network failures and HTTP 408, 429, 500, 502, 503, and 504.
+- `Retry-After` is respected for HTTP 429.
+- Agent communication-leg resolution: maximum three snapshot attempts.
+- Notification reconnect: maximum three attempts, then five-minute cooldown.
+- Agent Script wake, online/focus/page visibility, or manual restart may end the cooldown early.
+- Production debug history: latest 50 concise events.
+- Detailed payload logging is available only while Admin Verbose is enabled.
+- `monitorwake.html` waits for shared runtime configuration at most five times.
+- Page-load fallback runs once after four seconds when the primary monitor is not yet open.
+- Fallback uses the existing Joined decision and sends:
+  - Initial agent: `AGENT_JOINED` then `GREETING`
+  - Transferred agent: `AGENT_JOINED` then transfer `GREETING`
+  - Supervisor: `SUPERVISOR_JOINED` and the configured supervisor greeting rule
+- Primary and fallback paths use the same communication-leg duplicate keys, fast local lock, and participant-data sent keys.
+
+Versions:
+
+- GCB: `v1.7.2.68-production-safety`
+- ChatMonitor UI: `v1.2.27`
+- Cache: `172268`
+
+Agent Script expression:
+
+```text
+{{AFT_URL_GCB_Root_URL}}
++ "/monitorwake.html?v=172268"
++ {{AFT_URL_GCB_Common_Params}}
++ "&forceStart=true"
+```
