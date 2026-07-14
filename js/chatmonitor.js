@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.27';
+const APP_VERSION = 'v1.2.28';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -965,28 +965,122 @@ function isWakeRequestFresh(request){
   return !!created && Date.now()-created>=0 && Date.now()-created<=MONITOR_WAKE_MAX_AGE_MS;
 }
 
+function isValidRuntimeId(value){
+  return isValidConversationId(value);
+}
+function findWakeAgentParticipant(participants,request){
+  const requestedId=String(request?.agentParticipantId||'').trim();
+  if(isValidRuntimeId(requestedId)){
+    const exact=participants.find(p=>p?.id===requestedId && String(p?.purpose||'').toLowerCase()==='agent');
+    if(exact) return exact;
+  }
+  return findCurrentAgentParticipant(participants);
+}
+function buildWakeFailureRecord(snapshot,request,agent,reasonText,reason){
+  const participants=snapshot?.participants||[];
+  const customer=participants.find(p=>String(p?.purpose||'').toLowerCase()==='customer')||{};
+  const fallbackAgent=agent||{
+    id:String(request?.agentParticipantId||''),
+    userId:currentUser?.id||'',
+    name:request?.agentName||currentUser?.name||'Agent'
+  };
+  const info={state:'JOINED / CONNECTED',note:reasonText};
+  const rec=upsertRecord(
+    request.conversationId,
+    fallbackAgent,
+    {id:'',type:'webmessaging',state:'connected'},
+    info,
+    snapshot||{},
+    customer,
+    participants
+  );
+  rec.greetingStatus='Failed';
+  rec.messageType='JOINED+GREETING';
+  rec.lastAction=reasonText;
+  rec.recoverySource=reason;
+  conversations.set(rec.recordId,rec);
+  addAdminEvent('JOINED / GREETING NOT SENT',rec,reasonText);
+  refreshTables();
+  return rec;
+}
 async function recoverWakeConversation(request, reason){
   if(!request?.conversationId) return;
   try{
     const snapshot=await getConversationSnapshot(request.conversationId);
     const participants=snapshot?.participants||[];
-    const agent=findCurrentAgentParticipant(participants);
-    const comm=agent?getAgentCommunication(agent):{};
-    const info=agent?getAgentState(agent,comm):{state:'',note:''};
+    const agent=findWakeAgentParticipant(participants,request);
+    const resolvedComm=agent?getAgentCommunication(agent):{};
+    const suppliedCommunicationId=isValidRuntimeId(request.agentCommunicationId) ? String(request.agentCommunicationId).trim() : '';
+    const resolvedCommunicationId=isValidRuntimeId(resolvedComm?.id) ? String(resolvedComm.id).trim() : '';
+    const effectiveCommunicationId=resolvedCommunicationId || suppliedCommunicationId;
+    const resolvedInfo=agent?getAgentState(agent,resolvedComm):{state:'',note:''};
+    const participantConnected=!!agent && resolvedInfo.state==='JOINED / CONNECTED';
+    const effectiveConnected=participantConnected && !!effectiveCommunicationId;
+    const communicationSource=resolvedCommunicationId ? 'conversation-snapshot' : (suppliedCommunicationId ? 'agent-script' : 'missing');
+
     log('INFO',{
       monitorWakeConversationCheck:true,
       reason,
       conversationId:request.conversationId,
-      suppliedAgentCommunicationId:request.agentCommunicationId||'',
-      resolvedAgentCommunicationId:comm?.id||'',
-      communicationState:comm?.state||'',
-      connected:info.state==='JOINED / CONNECTED'
+      suppliedAgentCommunicationId:suppliedCommunicationId,
+      resolvedAgentCommunicationId:resolvedCommunicationId,
+      effectiveAgentCommunicationId:effectiveCommunicationId,
+      communicationSource,
+      communicationState:resolvedComm?.state||'',
+      participantConnected,
+      connected:effectiveConnected
     });
-    if(agent && comm?.id && info.state==='JOINED / CONNECTED'){
-      processConversationBody(snapshot,'agent-script-wake');
+
+    if(!agent){
+      buildWakeFailureRecord(
+        snapshot,request,null,
+        'Joined/Greeting not sent: logged-in agent participant could not be resolved from the conversation.',
+        reason
+      );
+      return;
     }
+    if(!effectiveCommunicationId){
+      buildWakeFailureRecord(
+        snapshot,request,agent,
+        'Joined/Greeting not sent: agent communication ID was not supplied and could not be resolved.',
+        reason
+      );
+      return;
+    }
+    if(!participantConnected){
+      buildWakeFailureRecord(
+        snapshot,request,agent,
+        'Joined/Greeting not sent: connected agent communication could not be confirmed.',
+        reason
+      );
+      return;
+    }
+
+    const customer=participants.find(p=>String(p.purpose||'').toLowerCase()==='customer')||{};
+    const effectiveComm={
+      ...resolvedComm,
+      id:effectiveCommunicationId,
+      type:resolvedComm?.type||'webmessaging',
+      state:resolvedComm?.state||'connected',
+      connectedTime:resolvedComm?.connectedTime||agent.connectedTime||agent.startTime||''
+    };
+    const info={state:'JOINED / CONNECTED',note:`Page-load recovery confirmed connected agent leg. Communication source: ${communicationSource}.`};
+    const rec=upsertRecord(request.conversationId,agent,effectiveComm,info,snapshot,customer,participants);
+    rec.recoverySource=reason;
+    rec.lastAction='Page-load fallback confirmed the connected agent leg. Checking Joined/Greeting delivery.';
+    conversations.set(rec.recordId,rec);
+    addAdminEvent('PAGE-LOAD FALLBACK CONNECTED',rec,rec.lastAction);
+    refreshTables();
+    await maybeAutoSendGreeting(rec);
   }catch(e){
     log('WARN',{monitorWakeConversationRecoveryFailed:true,reason,conversationId:request.conversationId,error:e.message});
+    try{
+      buildWakeFailureRecord(
+        {participants:[]},request,null,
+        `Joined/Greeting not sent: page-load recovery failed. ${e.message}`,
+        reason
+      );
+    }catch(_){}
   }
 }
 
@@ -1754,9 +1848,9 @@ function refreshTables(){
   const list=Array.from(conversations.values()).sort((a,b)=>(b.firstTime||'').localeCompare(a.firstTime||''));
   const active=list.filter(r=>r.state==='JOINED / CONNECTED'); const sent=list.filter(r=>r.greetingStatus==='Sent'); const pending=list.filter(r=>r.greetingStatus==='Pending'||r.greetingStatus==='Sending'); const failed=list.filter(r=>r.greetingStatus==='Failed'||r.greetingStatus==='Skipped');
   $('mActive').textContent=active.length; $('mSent').textContent=sent.length; $('mPending').textContent=pending.length; $('mFailed').textContent=failed.length; $('sTotal').textContent=list.length; $('sSent').textContent=sent.length; $('sPending').textContent=pending.length; $('sFailed').textContent=failed.length;
-  const agentRows=list.map(r=>`<tr><td>${escapeHtml(r.lastTime)}</td><td>${escapeHtml(shortId(r.conversationId))}</td><td>${escapeHtml(shortId(r.customerSessionId||'-'))}</td><td>${escapeHtml(r.isTransferJoin?'Transfer Join':'Initial Join')}</td><td>${greetingBadge(r.greetingStatus)}<br><span class="small">${escapeHtml(r.messageType||'-')}</span></td><td>${escapeHtml(r.lastAction||r.note||'-')}</td></tr>`).join('') || '<tr><td colspan="6" class="small">No active chats detected yet.</td></tr>';
+  const agentRows=list.map(r=>`<tr><td>${escapeHtml(r.lastTime)}</td><td>${escapeHtml(shortId(r.conversationId))}</td><td>${escapeHtml(shortId(r.customerSessionId||'-'))}</td><td>${escapeHtml(r.isTransferJoin?'Transfer Join':'Initial Join')}</td><td>${greetingBadge(r.greetingStatus)}<br><span class="small">${escapeHtml(r.messageType||'-')}</span></td><td>${escapeHtml(r.lastAction||r.note||'-')}${r.recoverySource?`<br><span class="small">Source: ${escapeHtml(r.recoverySource)}</span>`:''}</td></tr>`).join('') || '<tr><td colspan="6" class="small">No active chats detected yet.</td></tr>';
   $('agentTable').innerHTML=agentRows;
-  const supportRows=list.map(r=>`<tr><td>${escapeHtml(r.lastTime)}</td><td>${escapeHtml(r.conversationId)}</td><td>${escapeHtml(r.customerSessionId||'-')}</td><td>${escapeHtml(r.communicationId||'-')}</td><td>${escapeHtml(r.isTransferJoin?'Yes':'No')}</td><td title="${escapeHtml(r.participantId||'-')}">${escapeHtml(shortId(r.participantId||'-'))}<br><span class="small">${escapeHtml(r.state||'-')}</span></td><td>${escapeHtml(r.messageType||'-')}</td><td>${greetingBadge(r.greetingStatus)}<br><span class="small">${escapeHtml(r.lastAction||r.note||'-')}</span></td></tr>`).join('') || '<tr><td colspan="8" class="small">No support records yet.</td></tr>';
+  const supportRows=list.map(r=>`<tr><td>${escapeHtml(r.lastTime)}</td><td>${escapeHtml(r.conversationId)}</td><td>${escapeHtml(r.customerSessionId||'-')}</td><td>${escapeHtml(r.communicationId||'-')}</td><td>${escapeHtml(r.isTransferJoin?'Yes':'No')}</td><td title="${escapeHtml(r.participantId||'-')}">${escapeHtml(shortId(r.participantId||'-'))}<br><span class="small">${escapeHtml(r.state||'-')}</span></td><td>${escapeHtml(r.messageType||'-')}</td><td>${greetingBadge(r.greetingStatus)}<br><span class="small">${escapeHtml(r.lastAction||r.note||'-')}${r.recoverySource?`<br>Source: ${escapeHtml(r.recoverySource)}`:''}</span></td></tr>`).join('') || '<tr><td colspan="8" class="small">No support records yet.</td></tr>';
   $('supportTable').innerHTML=supportRows;
   updateDashboardStatus();
 }

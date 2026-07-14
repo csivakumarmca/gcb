@@ -390,3 +390,27 @@ Agent Script expression:
 + {{AFT_URL_GCB_Common_Params}}
 + "&forceStart=true"
 ```
+
+
+## v1.7.2.69-monitorwake-fallback-fix
+
+MonitorWake fallback correction:
+
+- Uses the valid Agent Script `agentCommunicationId` when the conversation snapshot does not return a communication ID.
+- Prefers a snapshot-resolved communication ID when available.
+- Confirms the logged-in agent participant is connected before sending.
+- Runs the existing Joined/Greeting sender directly for the effective communication leg.
+- Keeps existing duplicate, participant-data, transfer, supervisor, and language logic unchanged.
+- Shows fallback failures in Agent, Support, and Admin tables.
+- Example visible reason: `Joined/Greeting not sent: connected agent communication could not be confirmed.`
+- Cache version: `172269`
+- ChatMonitor UI: `v1.2.28`
+
+Agent Script expression:
+
+```text
+{{AFT_URL_GCB_Root_URL}}
++ "/monitorwake.html?v=172269"
++ {{AFT_URL_GCB_Common_Params}}
++ "&forceStart=true"
+```
