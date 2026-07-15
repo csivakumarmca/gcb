@@ -4,7 +4,7 @@
  *          Uses communication-leg send keys, runtime memory, localStorage, and participant data duplicate checks.
  *          Maintains support/admin dashboard status and exportable logs.
  */
-const APP_VERSION = 'v1.2.53';
+const APP_VERSION = 'v1.0.0';
 let currentUser = null;
 let channel = null;
 let notifySocket = null;
@@ -170,8 +170,6 @@ const EXPECTED_GCB_PARTICIPANT_ATTRIBUTES = [
   {group:'HOLD_LABEL', name:'AFT_GCB_HoldMaxAttemptsAlertText', required:true},
   {group:'HOLD_LABEL', name:'AFT_GCB_HoldAlertTitle', required:true},
   {group:'HOLD_LABEL', name:'AFT_GCB_AutoResumeSentText', required:true},
-  {group:'PROSPECTS', name:'AFT_GCB_ProspectsTypeDataTableId', required:true},
-  {group:'PROSPECTS', name:'AFT_GCB_ProspectsMappingDataTableId', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_InteractionOutcomeMultiSelect', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_ContactReasonSeparator', required:true},
   {group:'PROSPECTS', name:'AFT_GCB_WrapupNameSeparator', required:true},
@@ -1894,7 +1892,7 @@ function refreshParticipantConfigStatus(){
   const required=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required).length;
   const okRequired=EXPECTED_GCB_PARTICIPANT_ATTRIBUTES.filter(x=>x.required && normalizeAttrValueForStatus(attrs[x.name])).length;
   const missing=required-okRequired;
-  const summary=rec ? `Conversation: ${shortId(rec.conversationId)} | Data Table Participant Config: ${okRequired}/${required} OK | Missing: ${missing}` : 'Waiting for active conversation participant data.';
+  const summary=rec ? `Conversation: ${shortId(rec.conversationId)} | Participant Config: ${okRequired}/${required} OK | Missing: ${missing}` : 'Waiting for active conversation participant data.';
   const rows=rec ? buildConfigStatusRows(attrs) : '<tr><td class="small" colspan="3">No participant data loaded yet.</td></tr>';
   const supportBody=$('supportConfigStatus'); if(supportBody) supportBody.innerHTML=rows;
   const adminBody=$('adminConfigStatus'); if(adminBody) adminBody.innerHTML=rows;
